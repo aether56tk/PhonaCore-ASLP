@@ -154,7 +154,7 @@ export function measurementGate(a){
 export function analyzeVoice(samples,sr){
   const clean=normalize(removeDC(samples)),duration=samples.length/sr,p=peak(samples),r=rms(samples);
   const track=pitchTrack(clean,sr),periods=extractPeriods(clean,sr),seq=periodSequenceFeatures(periods),voiced=track.filter(x=>x.f0),f0s=voiced.map(x=>x.f0);
-  const pf=periodFeatures(track),periodLevel=periodSequenceFeatures(periods),periodPf=periodLevel.validPeriods>=3?periodFeatures(periodLevel.records.map(p=>({f0:p.f0,rms:p.peakToPeak}))):pf,periodAf=periodLevel.validPeriods>=3?amplitudeFeatures(periodLevel.records.map(p=>({f0:p.f0,rms:p.peakToPeak}))):af,af=amplitudeFeatures(track),noise=spectralNoise(clean,sr,mean(f0s)),cpp=spectralCepstrumCPP(clean,sr);
+  const pf=periodFeatures(track),af=amplitudeFeatures(track),periodLevel=periodSequenceFeatures(periods),periodPf=periodLevel.validPeriods>=3?periodFeatures(periodLevel.records.map(p=>({f0:p.f0,rms:p.peakToPeak}))):pf,periodAf=periodLevel.validPeriods>=3?amplitudeFeatures(periodLevel.records.map(p=>({f0:p.f0,rms:p.peakToPeak}))):af,noise=spectralNoise(clean,sr,mean(f0s)),cpp=spectralCepstrumCPP(clean,sr);
   const clipped=samples.length?samples.filter(x=>Math.abs(x)>=.99).length/samples.length*100:0;
   const voicedPct=track.length?voiced.length/track.length*100:0;
   const quality=Math.max(0,Math.min(100,Math.round(100-0.5*clipped-0.35*Math.max(0,40-voicedPct))));
