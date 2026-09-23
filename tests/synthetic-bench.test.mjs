@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {sineVoice,runSyntheticBench} from '../src/research/syntheticVoice.js';
+import {sineVoice,runSyntheticBench,runSyntheticBenchmark} from '../src/research/syntheticVoice.js';
 
 test('synthetic constant voice has deterministic ground truth',()=>{
   const v=sineVoice({periods:120,baseF0:120,jitterPct:0,amplitudeVariationPct:0});
@@ -27,4 +27,12 @@ test('jitter and amplitude perturbation ground truth are nonzero when introduced
   const a=rows.find(x=>x.id==='amplitude-variation').expected;
   assert(j.jittPct>0 && j.vf0Pct>0);
   assert(a.vamPct>0 && a.apqPct>0);
+});
+
+test('automated benchmark returns PASS/FAIL rows',()=>{
+  const report=runSyntheticBenchmark();
+  assert.equal(report.cases.length,4);
+  assert(report.cases.every(r=>r.results.length===10));
+  assert(report.cases.every(r=>r.results.every(x=>['PASS','FAIL'].includes(x.status))));
+  assert.equal(typeof report.overallPass,'boolean');
 });
