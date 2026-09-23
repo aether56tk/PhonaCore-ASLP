@@ -1,0 +1,3 @@
+import {qaDataset} from "../validation/qa.js";
+import {generateValidationReport} from "../reports/validationReport.js";
+export function prepareValidationRun(rows=[],metadata={}){const qa=qaDataset(rows.map(r=>({participant_id:r.participant_id,sample_id:r.sample_id,task:r.task,reference:r.reference,securavox:r.securavox,sample_rate:r.sample_rate,duration_sec:r.duration_sec,quality:r.quality})));const report=qa.ready?generateValidationReport(rows):null;return {metadata,qa,report,ready:qa.ready}}
