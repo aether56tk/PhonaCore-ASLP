@@ -1,4 +1,4 @@
-export function num(v){const n=Number(v);return Number.isFinite(n)?n:null}
+export function num(v){if(v===null||v===undefined||String(v).trim()==='')return null;const n=Number(v);return Number.isFinite(n)?n:null}
 function clean(pairs){return pairs.map(x=>Array.isArray(x)?x:[x.reference,x.phonacore]).map(x=>[num(x[0]),num(x[1])]).filter(x=>x[0]!==null&&x[1]!==null)}
 export function pearson(pairs){const p=clean(pairs),n=p.length;if(n<2)return null;const a=p.map(x=>x[0]),b=p.map(x=>x[1]),ma=a.reduce((s,x)=>s+x,0)/n,mb=b.reduce((s,x)=>s+x,0)/n,sa=Math.sqrt(a.reduce((s,x)=>s+(x-ma)**2,0)),sb=Math.sqrt(b.reduce((s,x)=>s+(x-mb)**2,0));return sa&&sb?a.reduce((s,x,i)=>s+(x-ma)*(b[i]-mb),0)/(sa*sb):null}
 export function ccc(pairs){const p=clean(pairs),n=p.length;if(n<2)return null;const a=p.map(x=>x[0]),b=p.map(x=>x[1]),ma=a.reduce((s,x)=>s+x,0)/n,mb=b.reduce((s,x)=>s+x,0)/n,va=a.reduce((s,x)=>s+(x-ma)**2,0)/n,vb=b.reduce((s,x)=>s+(x-mb)**2,0)/n,cov=a.reduce((s,x,i)=>s+(x-ma)*(b[i]-mb),0)/n;return 2*cov/(va+vb+(ma-mb)**2)}
