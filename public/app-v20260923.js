@@ -1,5 +1,5 @@
 /* PhonaCore-ASLP build: 2026-09-23-fix-algorithm-validation */
-window.__PHONACORE_BUILD='2026-09-23-clinical-ux8';
+window.__PHONACORE_BUILD='2026-09-23-clinical-ux9';
 const {analyzeVoice,stats,mean,sd}=window.SV_DSP;
 const $=s=>document.querySelector(s), store={get(k,d){try{const raw=localStorage.getItem('sv_'+k);if(raw!==null)return JSON.parse(raw)}catch(e){}try{const raw=sessionStorage.getItem('sv_'+k);if(raw!==null)return JSON.parse(raw)}catch(e){}return d},set(k,v){const raw=JSON.stringify(v);try{localStorage.setItem('sv_'+k,raw);return true}catch(e){try{sessionStorage.setItem('sv_'+k,raw);return true}catch(_){return false}}}};
 let state={page:'Dashboard',theme:store.get('theme','night'),patient:null,patients:store.get('patients',[]),sessions:store.get('sessions',[]),recording:false,stream:null,recorder:null,chunks:[],pcmChunks:[],pcmProcessor:null,timer:null,seconds:0,analysis:null,tele:null,datasets:store.get('datasets',[]),experiments:store.get('experiments',[]),audioFiles:[],fileDirectory:null,pendingRecordingId:null};
@@ -134,24 +134,51 @@ async function finishPCM(){
       },0);
       return;
     }
-    const worker=new Worker('./analysis-worker.js?build=20260923-qa2');
+    const analyzeFallback=()=>{
+      try{
+        const a=analyzeVoice(pcm,sr);
+        a.task=task;
+        a.taskMetrics=window.SV_DSP.taskSpecificMetrics(pcm,sr,task);
+        a.measurementStatus.gate=window.SV_DSP.measurementGate(a);
+        a.recordingMeta={sampleRate:sr,channels:1,duration,codec:'PCM/Web Audio'};
+        state.analysis=a;
+        state.notice='Recording analyzed successfully.';
+        render();
+      }catch(e){
+        state.notice='Recording analysis failed: '+(e?.message||e);
+        render();
+      }
+    };
+    const worker=new Worker('./analysis-worker.js?build=20260923-ux9');
     state.analysisWorker=worker;
+    let workerFinished=false;
+    const finishWorker=()=>{workerFinished=true;clearTimeout(workerTimeout);worker.terminate();if(state.analysisWorker===worker)state.analysisWorker=null};
     worker.onmessage=e=>{
+      if(workerFinished)return;
       const msg=e.data||{};
-      worker.terminate();
-      if(state.analysisWorker===worker)state.analysisWorker=null;
-      if(!msg.ok){state.notice='Recording analysis failed: '+(msg.error||'Unknown worker error');render();return}
+      finishWorker();
+      if(!msg.ok){state.notice='Worker analysis failed; retrying locally…';render();setTimeout(analyzeFallback,0);return}
       state.analysis=msg.analysis;
       state.notice='Recording analyzed successfully.';
       render();
     };
     worker.onerror=e=>{
-      worker.terminate();
-      if(state.analysisWorker===worker)state.analysisWorker=null;
-      state.notice='Recording analysis failed: '+(e.message||'Analysis worker error');
+      if(workerFinished)return;
+      finishWorker();
+      state.notice='Analysis worker unavailable; retrying locally…';
       render();
+      setTimeout(analyzeFallback,0);
     };
-    worker.postMessage({buffer:pcm.buffer,sr,task,duration},[pcm.buffer]);
+    const workerTimeout=setTimeout(()=>{
+      if(workerFinished)return;
+      finishWorker();
+      state.notice='Analysis is taking longer than expected; completing locally…';
+      render();
+      setTimeout(analyzeFallback,0);
+    },20000);
+    // Keep a local copy because the worker may fail on some mobile browsers.
+    const workerPcm=pcm.slice();
+    worker.postMessage({buffer:workerPcm.buffer,sr,task,duration},[workerPcm.buffer]);
   }catch(e){
     cleanupRecording();
     state.recording=false;
