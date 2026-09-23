@@ -1,55 +1,87 @@
 # PhonaCore-ASLP
 
-**Browser-based acoustic voice analysis, clinical assessment and research validation platform for Audiology & Speech-Language Pathology.**
+**Browser-based acoustic voice analysis, clinical assessment and research software platform for Audiology & Speech-Language Pathology.**
 
 ## Live application
 
 **GitHub Pages:** https://aether56tk.github.io/PhonaCore-ASLP/
 
-PhonaCore-ASLP provides a browser-based workflow for voice recording, acoustic analysis, clinical documentation, research validation, reliability analysis, criterion/reference comparison, standardized study protocols, dataset QA, and reproducibility reporting.
+## Platform
 
-## Core capabilities
+PhonaCore-ASLP is a browser-based software interface designed for voice assessment, acoustic analysis, clinical workflow management, reporting, tele-assessment, research workflows, and data organization.
 
-- Browser-based voice acquisition with controlled recording settings
-- Signal-quality monitoring and measurement gates
-- Acoustic analysis including F0, jitter/period perturbation, shimmer/amplitude perturbation, noise-related measures and CPP prototype
-- Voice tasks including sustained vowel, reading, counting, conversation, maximum phonation time, pitch range and intensity
-- Clinical assessment and structured reporting workflow
-- Vocal-health and hygiene education resources
-- Standardized research recording protocol
-- Batch WAV analysis with protocol QA and SHA-256 file integrity hashes
-- MDVP/reference-system comparison workflow
-- Bias, MAE, RMSE, Pearson correlation, CCC and Bland–Altman agreement analysis
-- Test–retest and recording-condition reliability analysis
-- Controlled synthetic algorithm validation
-- Human-study management and final QA workflow
-- Reproducibility/publication package export
+## UI / UX modules
 
-## Research workflow
+- Dashboard
+- Patient management
+- Clinical assessment
+- Voice Lab
+- Recording and task workflow
+- Acoustic measurement dashboard
+- Clinical reports
+- Tele-assessment
+- Research Lab
+- Study Protocol
+- Batch Research
+- Validation Lab
+- Reliability Lab
+- Validity Lab
+- Algorithm Validation
+- Study Manager
+- Dataset management
+- Statistics
+- Security and privacy controls
+- Settings
 
-```text
-Participant
-    ↓
-Consent and study registration
-    ↓
-Standardized recording
-    ↓
-Signal / protocol QA
-    ↓
-PhonaCore-ASLP analysis
-    ↓
-Reference-system analysis
-    ↓
-Paired measurements
-    ↓
-Agreement / reliability analysis
-    ↓
-Dataset integrity and reproducibility QA
-    ↓
-Research results
-```
+## Software features
 
-The validation design is based on analyzing the **same standardized recording** with PhonaCore-ASLP and the selected reference implementation wherever reference comparison is performed.
+- Browser microphone recording
+- Real-time input-level monitoring
+- Voice-task selection and guided recording
+- Acoustic measurement display
+- Signal-quality indicators
+- Interactive data tables
+- Research dataset import/export
+- CSV and JSON workflows
+- Recording metadata
+- Session management
+- Clinical documentation
+- Report generation and printing
+- Data visualization
+- Validation and statistical analysis interfaces
+- Dataset integrity and hashing tools
+- Standardized study workflow tools
+- Local/browser-oriented processing
+
+## Voice analysis interface
+
+The Voice Lab provides structured workflows for:
+
+- Sustained vowel
+- Reading
+- Counting
+- Conversation
+- Maximum phonation time
+- Pitch range
+- Loudness / intensity
+
+The interface presents acoustic measurements, recording quality information, task information, session data, and analysis results in a unified workflow.
+
+## Research software
+
+The research section provides software tools for:
+
+- Standardized recording protocols
+- Batch WAV analysis
+- Dataset organization
+- Reference-system comparison
+- Agreement analysis
+- Reliability analysis
+- Criterion-validity analysis
+- Algorithm validation
+- Study QA
+- Reproducibility metadata
+- Exportable research reports
 
 ## Local development
 
@@ -61,11 +93,11 @@ npm test
 npm start
 ```
 
-Then open:
+Open:
 
 `http://localhost:5173`
 
-For the full verification workflow:
+Run the software verification commands:
 
 ```bash
 npm run check
@@ -73,32 +105,38 @@ npm run synthetic:benchmark
 npm run ci
 ```
 
-## Data privacy and research data
+## Privacy
 
-The application is designed around local/browser-side processing for the research workflow. **Do not publish participant recordings, consent forms, names, contact information, or other identifiable research data in this repository or through GitHub Pages.**
+PhonaCore-ASLP is designed with browser/local processing workflows where applicable.
 
-Keep research participant data in the approved secure research storage defined by the study protocol.
+Do not place personal identifiers, patient records, consent documents, clinical recordings, or other sensitive information in the public GitHub repository or GitHub Pages deployment.
 
-## Scientific boundary
+Use appropriate secure storage and institutional procedures for real patient or research data.
 
-PhonaCore-ASLP is a **research/educational software system**. The presence of an algorithm-validation or reference-comparison workflow does not by itself establish clinical validity, diagnostic accuracy, normative reference ranges, regulatory certification, or equivalence to MDVP.
+## Project structure
 
-Acoustic measures may depend on the recording protocol, microphone/device, browser processing, signal quality, pitch/period extraction and analysis implementation. Results should therefore be interpreted according to the study protocol and validated against the defined reference implementation.
+```text
+PhonaCore-ASLP/
+├── public/              # Browser application, UI and client-side workflows
+├── src/                 # Analysis and research software modules
+├── tests/               # Automated software tests
+├── server.js            # Local development server
+├── package.json         # Project configuration
+└── .github/workflows/   # Automated verification
+```
 
-The synthetic benchmark uses controlled engineering test signals and is not a substitute for human-subject validation.
+## Status
 
-## Current research aim
+**Software platform:** implemented
 
-The primary research aim is to evaluate how closely acoustic measurements obtained using PhonaCore-ASLP agree with measurements obtained from a defined reference system (including MDVP where applicable) using standardized voice recordings.
+**UI/UX workflow:** implemented
 
-A secondary research question concerns the effect of recording/device/browser processing conditions on PhonaCore-ASLP measurements.
+**Automated software testing:** enabled
 
-## Project status
+**Research and validation tools:** implemented as software workflows
 
-- Software workflow: **implemented**
-- Automated software QA: **passing**
-- Standardized research workflow: **implemented**
-- Human participant data collection: **study phase**
-- Empirical human validation: **pending study data**
+**Human-data studies:** separate from the software deployment
 
-Human-study conclusions should be based on the collected dataset, approved study methodology and appropriate statistical analysis.
+## Important
+
+PhonaCore-ASLP is software for Audiology and Speech-Language Pathology workflows. Acoustic results and other outputs should be interpreted by appropriately trained users within the intended workflow and study context.
