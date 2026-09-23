@@ -11,7 +11,7 @@
     "synthetic": "node -e \"import('./src/research/syntheticVoice.js').then(m=>console.log(JSON.stringify(m.runSyntheticBench(),null,2)))\"",
     "synthetic:benchmark": "node -e \"import('./src/research/syntheticVoice.js').then(m=>console.log(JSON.stringify(m.runSyntheticBenchmark(),null,2)))\"",
     "ci": "npm test && npm run build && npm run synthetic:benchmark",
-    "syntax:check": "node --check public/app.js && node --check public/dsp.js && node --check public/boot.js && node --check server.js && node --check src/dsp.js && node --check src/research/syntheticVoice.js && node --check src/research/studyProtocol.js"
+    "syntax:check": "node --check public/app.js && node --check public/dsp.js && node --check public/boot.js && node --check public/validity.js && node --check public/reliability.js && node --check public/algorithm-validation.js && node --check public/final-qa.js && node --check server.js && node --check src/dsp.js && node --check src/research/syntheticVoice.js && node --check src/research/studyProtocol.js && node --check src/research/algorithmValidation.js && node --check src/research/validity.js && node --check src/research/reliability.js && node --check src/research/finalQa.js"
   },
   "engines": {
     "node": ">=20"
