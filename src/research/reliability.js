@@ -37,7 +37,7 @@ export function icc31(matrix){
   const msSubject=ssSubject/(n-1);
   const msError=ssError/((n-1)*(k-1));
   const icc=(msSubject-msError)/(msSubject+(k-1)*msError);
-  return {n,k,icc31,msSubject,msError,grandMean:grand};
+  return {n,k,icc31:(msSubject-msError)/(msSubject+(k-1)*msError),msSubject,msError,grandMean:grand};
 }
 
 export function testRetest(rows,{id='subject_id',session='session_id',parameter='f0Mean',first='T1',second='T2'}={}){
