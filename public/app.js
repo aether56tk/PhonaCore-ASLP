@@ -18,7 +18,7 @@ function line(vals){if(!vals.length)return'<div class="empty">No reliable pitch 
 async function startRecord(){
   try{
     if(!window.isSecureContext){throw new Error('Microphone access requires HTTPS. Open the GitHub Pages HTTPS address.')}
-    if(!navigator.mediaDevices?.getUserMedia){throw new Error('This browser does not provide microphone access. Use a current Chrome, Edge, or Firefox browser.')}
+    if(!navigator.mediaDevices?.getUserMedia){throw new Error('This browser does not provide microphone access. Use a current Chrome, Edge, or Firefox browser.')}\n    if(typeof MediaRecorder==='undefined'){throw new Error('This browser does not support MediaRecorder. Use the latest Chrome, Edge, Firefox, or Safari.')} 
     const C=window.AudioContext||window.webkitAudioContext;
     if(!C)throw new Error('Web Audio API is not available in this browser.');
     state.voiceTask=$('#task')?.value||'vowel';
@@ -33,7 +33,7 @@ async function startRecord(){
     src.connect(state.analyser);
     const preferred=['audio/webm;codecs=opus','audio/webm','audio/mp4'];
     const mime=typeof MediaRecorder!=='undefined'&&typeof MediaRecorder.isTypeSupported==='function'?preferred.find(x=>MediaRecorder.isTypeSupported(x))||'':'';
-    state.recorder=mime?new MediaRecorder(state.stream,{mimeType:mime}):new MediaRecorder(state.stream);
+    state.recorder=mime?new MediaRecorder(state.stream,{mimeType:mime}):new MediaRecorder(state.stream);\n    state.recorder.onstart=()=>{state.notice='Recording started. Speak naturally.'};
     state.chunks=[];
     state.recorder.ondataavailable=e=>{if(e.data?.size)state.chunks.push(e.data)};
     state.recorder.onerror=e=>{state.notice='Recorder error: '+(e.error?.message||'Unable to record');cleanupRecording();state.recording=false;render()};
