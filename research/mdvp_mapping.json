@@ -1,34 +1,172 @@
 {
   "referenceSystem": "Multi-Dimensional Voice Program (MDVP)",
-  "purpose": "Define the initial PhonaCore-ASLP to MDVP comparison set before empirical validation.",
+  "purpose": "Research implementation mapping for the Model 5105 parameter hierarchy supplied for PhonaCore validation.",
   "directComparison": [
-    {"mdvp":"F0","phonacore":"f0Mean","unit":"Hz","status":"prototype"},
-    {"mdvp":"Fhi","phonacore":"f0Max","unit":"Hz","status":"prototype"},
-    {"mdvp":"Flo","phonacore":"f0Min","unit":"Hz","status":"prototype"},
-    {"mdvp":"STD","phonacore":"f0Sd","unit":"Hz","status":"prototype"},
-    {"mdvp":"Jita","phonacore":"jitaUs","unit":"us","status":"prototype"},
-    {"mdvp":"Jitt","phonacore":"jittPct","unit":"%","status":"prototype"},
-    {"mdvp":"RAP","phonacore":"rapPct","unit":"%","status":"prototype"},
-    {"mdvp":"PPQ","phonacore":"ppqPct","unit":"%","status":"prototype"},
-    {"mdvp":"sPPQ","phonacore":"sppqPct","unit":"%","status":"prototype"},
-    {"mdvp":"vF0","phonacore":"vf0Pct","unit":"%","status":"prototype"},
-    {"mdvp":"ShdB","phonacore":"shdB","unit":"dB","status":"prototype"},
-    {"mdvp":"Shim","phonacore":"shimPct","unit":"%","status":"prototype"},
-    {"mdvp":"APQ","phonacore":"apqPct","unit":"%","status":"prototype"},
-    {"mdvp":"sAPQ","phonacore":"sapqPct","unit":"%","status":"prototype"},
-    {"mdvp":"vAm","phonacore":"vamPct","unit":"%","status":"prototype"},
-    {"mdvp":"NHR","phonacore":"nhr","unit":"ratio","status":"prototype"}
+    {
+      "mdvp": "F0",
+      "phonacore": "f0Mean",
+      "unit": "Hz",
+      "formula": "mean(valid F0 periods)",
+      "window": null,
+      "status": "implementation-target"
+    },
+    {
+      "mdvp": "Fhi",
+      "phonacore": "f0Max",
+      "unit": "Hz",
+      "formula": "maximum(valid F0)",
+      "window": null,
+      "status": "implementation-target"
+    },
+    {
+      "mdvp": "Flo",
+      "phonacore": "f0Min",
+      "unit": "Hz",
+      "formula": "minimum(valid F0)",
+      "window": null,
+      "status": "implementation-target"
+    },
+    {
+      "mdvp": "STD",
+      "phonacore": "f0Sd",
+      "unit": "Hz",
+      "formula": "sample SD of valid F0",
+      "window": "full sample",
+      "status": "implementation-target"
+    },
+    {
+      "mdvp": "T0",
+      "phonacore": "t0Ms",
+      "unit": "ms",
+      "formula": "1000 × mean(period)",
+      "window": "full sample",
+      "status": "implementation-target"
+    },
+    {
+      "mdvp": "Jita",
+      "phonacore": "jitaUs",
+      "unit": "us",
+      "formula": "mean(abs(P[i]-P[i-1])) × 1e6",
+      "window": "adjacent periods",
+      "status": "implementation-target"
+    },
+    {
+      "mdvp": "Jitt",
+      "phonacore": "jittPct",
+      "unit": "%",
+      "formula": "100 × Jita / mean(period)",
+      "window": "full sample",
+      "status": "implementation-target"
+    },
+    {
+      "mdvp": "RAP",
+      "phonacore": "rapPct",
+      "unit": "%",
+      "formula": "100 × mean(abs(center - movingMean(center, 3))/abs(movingMean))",
+      "window": 3,
+      "status": "implementation-target"
+    },
+    {
+      "mdvp": "PPQ",
+      "phonacore": "ppqPct",
+      "unit": "%",
+      "formula": "100 × mean(abs(center - movingMean(center, 5))/abs(movingMean))",
+      "window": 5,
+      "status": "implementation-target"
+    },
+    {
+      "mdvp": "sPPQ",
+      "phonacore": "sppqPct",
+      "unit": "%",
+      "formula": "100 × mean(abs(center - movingMean(center, 55))/abs(movingMean))",
+      "window": 55,
+      "status": "implementation-target"
+    },
+    {
+      "mdvp": "vF0",
+      "phonacore": "vf0Pct",
+      "unit": "%",
+      "formula": "100 × SD(F0) / mean(F0)",
+      "window": "full sample",
+      "status": "implementation-target"
+    },
+    {
+      "mdvp": "ShdB",
+      "phonacore": "shdB",
+      "unit": "dB",
+      "formula": "mean(abs(20 × log10(A[i]/A[i-1])))",
+      "window": "adjacent amplitudes",
+      "status": "implementation-target"
+    },
+    {
+      "mdvp": "Shim",
+      "phonacore": "shimPct",
+      "unit": "%",
+      "formula": "100 × mean(abs(A[i]-A[i-1])/((A[i]+A[i-1])/2))",
+      "window": "adjacent amplitudes",
+      "status": "implementation-target"
+    },
+    {
+      "mdvp": "APQ",
+      "phonacore": "apqPct",
+      "unit": "%",
+      "formula": "100 × mean(abs(center - movingMean(center, 11))/abs(movingMean))",
+      "window": 11,
+      "status": "implementation-target"
+    },
+    {
+      "mdvp": "sAPQ",
+      "phonacore": "sapqPct",
+      "unit": "%",
+      "formula": "100 × mean(abs(center - movingMean(center, 55))/abs(movingMean))",
+      "window": 55,
+      "status": "implementation-target"
+    },
+    {
+      "mdvp": "vAm",
+      "phonacore": "vamPct",
+      "unit": "%",
+      "formula": "100 × SD(peak-to-peak amplitude) / mean(peak-to-peak amplitude)",
+      "window": "full sample",
+      "status": "implementation-target"
+    },
+    {
+      "mdvp": "NHR",
+      "phonacore": "nhr",
+      "unit": "ratio",
+      "formula": "spectral noise/harmonic ratio; frequency bands require reference-setting verification",
+      "window": "spectral",
+      "status": "implementation-target"
+    }
   ],
-  "additionalPhonacore": [
-    {"parameter":"CPP","field":"cppPrototypeDb","status":"additional; not a direct MDVP-equivalence endpoint"},
-    {"parameter":"T0","field":"t0Ms","status":"supporting"},
-    {"parameter":"PFR","field":"pfrSemitones","status":"supporting"}
+  "additional": [
+    {
+      "mdvp": "VTI",
+      "phonacore": "vti",
+      "status": "prototype; spectral band definition implemented only partially"
+    },
+    {
+      "mdvp": "SPI",
+      "phonacore": "spi",
+      "status": "prototype; spectral band definition implemented only partially"
+    },
+    {
+      "mdvp": "CPP",
+      "phonacore": "cppPrototypeDb",
+      "status": "additional measure, not an MDVP equivalence endpoint"
+    }
   ],
-  "methodRule": "A similarly named parameter must not be treated as equivalent until its operational definition, analysis window, pitch settings, smoothing factor, frequency range, preprocessing and valid-cycle criteria are matched or explicitly documented.",
   "validation": {
-    "primary": ["bias","MAE","RMSE","Bland-Altman limits of agreement"],
-    "secondary": ["Pearson or Spearman correlation as appropriate","descriptive statistics"],
-    "important": "Correlation is not agreement."
+    "pairing": "Analyze the identical WAV in both systems.",
+    "metrics": [
+      "bias",
+      "MAE",
+      "RMSE",
+      "Bland-Altman limits of agreement",
+      "CCC",
+      "ICC"
+    ],
+    "note": "Correlation alone is not agreement."
   },
-  "recordingRule": "The identical audio file should be analyzed by MDVP and PhonaCore-ASLP whenever possible so that recording variability is not confounded with software differences."
+  "methodRule": "A matching parameter name does not establish equivalence. Final equivalence requires matching reference settings, preprocessing, pitch extraction, valid-cycle criteria and paired empirical validation."
 }
