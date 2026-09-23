@@ -7,10 +7,11 @@
     "start": "node server.js",
     "test": "node --test tests/*.test.mjs",
     "check": "npm test && npm run build",
-    "build": "node -e \"const fs=require('fs'); for (const f of ['public/index.html','public/app.css','public/app.js','public/dsp.js']) if(!fs.existsSync(f)) process.exit(1); console.log('Static build check passed')\"",
+    "build": "npm run syntax:check && node -e \"const fs=require('fs'); for (const f of ['public/index.html','public/app.css','public/app.js','public/dsp.js']) if(!fs.existsSync(f)) process.exit(1); console.log('Static build check passed')\"",
     "synthetic": "node -e \"import('./src/research/syntheticVoice.js').then(m=>console.log(JSON.stringify(m.runSyntheticBench(),null,2)))\"",
     "synthetic:benchmark": "node -e \"import('./src/research/syntheticVoice.js').then(m=>console.log(JSON.stringify(m.runSyntheticBenchmark(),null,2)))\"",
-    "ci": "npm test && npm run build && npm run synthetic:benchmark"
+    "ci": "npm test && npm run build && npm run synthetic:benchmark",
+    "syntax:check": "node --check public/app.js && node --check public/dsp.js && node --check public/boot.js && node --check server.js && node --check src/dsp.js && node --check src/research/syntheticVoice.js && node --check src/research/studyProtocol.js"
   },
   "engines": {
     "node": ">=20"
