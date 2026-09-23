@@ -34,20 +34,27 @@ async function startRecord(){
     state.analyser.fftSize=2048;
     src.connect(state.analyser);
 
-    // Capture raw PCM directly from Web Audio. Prefer AudioWorklet on modern
-    // mobile Chrome/Edge; retain ScriptProcessor only as a compatibility fallback.
+    // Capture raw PCM directly from Web Audio. Try AudioWorklet first, but
+    // automatically fall back to ScriptProcessor when the worklet module is
+    // unavailable on a mobile/GitHub Pages browser.
     state.pcmChunks=[];
     state.recording=true;
-    if(state.audioContext.audioWorklet){
-      await state.audioContext.audioWorklet.addModule('./pcm-worklet.js');
-      state.pcmProcessor=new AudioWorkletNode(state.audioContext,'phonacore-pcm',{numberOfInputs:1,numberOfOutputs:1,channelCount:1});
-      state.pcmProcessor.port.onmessage=e=>{
-        if(state.recording&&e.data?.length)state.pcmChunks.push(new Float32Array(e.data));
-      };
-      src.connect(state.pcmProcessor);
-      const mute=state.audioContext.createGain(); mute.gain.value=0;
-      state.pcmProcessor.connect(mute); mute.connect(state.audioContext.destination);
-    }else if(state.audioContext.createScriptProcessor){
+    let captured=false;
+    if(state.audioContext.audioWorklet&&typeof AudioWorkletNode!=='undefined'){
+      try{
+        const workletUrl=new URL('pcm-worklet.js',document.baseURI).href;
+        await state.audioContext.audioWorklet.addModule(workletUrl);
+        state.pcmProcessor=new AudioWorkletNode(state.audioContext,'phonacore-pcm',{numberOfInputs:1,numberOfOutputs:1,channelCount:1});
+        state.pcmProcessor.port.onmessage=e=>{
+          if(state.recording&&e.data?.length)state.pcmChunks.push(new Float32Array(e.data));
+        };
+        src.connect(state.pcmProcessor);
+        const mute=state.audioContext.createGain(); mute.gain.value=0;
+        state.pcmProcessor.connect(mute); mute.connect(state.audioContext.destination);
+        captured=true;
+      }catch(_){ try{state.pcmProcessor?.disconnect?.()}catch(__){} state.pcmProcessor=null; }
+    }
+    if(!captured&&state.audioContext.createScriptProcessor){
       state.pcmProcessor=state.audioContext.createScriptProcessor(4096,1,1);
       const mute=state.audioContext.createGain(); mute.gain.value=0;
       state.pcmProcessor.onaudioprocess=e=>{
@@ -55,9 +62,13 @@ async function startRecord(){
       };
       src.connect(state.pcmProcessor);
       state.pcmProcessor.connect(mute); mute.connect(state.audioContext.destination);
-    }else{
+      captured=true;
+    }
+    if(!captured){
+      state.recording=false;
       throw new Error('This browser cannot provide raw microphone samples.');
     }
+    state.notice='Microphone connected. Recording PCM samples…';
     state.seconds=0;
     state.notice='Recording… speak naturally.';
     state.timer=setInterval(updateCapture,1000);
