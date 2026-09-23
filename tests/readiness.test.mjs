@@ -1,0 +1,2 @@
+import test from "node:test";import assert from "node:assert/strict";import {readinessGates} from "../src/readiness.js";
+test("readiness is blocked until gates are complete",()=>{const r=readinessGates({softwareTests:true,build:true,protocol:true});assert.equal(r.readyForClinicalDeployment,false);assert(r.missing.includes("validation"))});
