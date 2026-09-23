@@ -1,5 +1,5 @@
 /* PhonaCore-ASLP build: 2026-09-23-fix-algorithm-validation */
-window.__PHONACORE_BUILD='2026-09-23-clinical-ux7';
+window.__PHONACORE_BUILD='2026-09-23-clinical-ux8';
 const {analyzeVoice,stats,mean,sd}=window.SV_DSP;
 const $=s=>document.querySelector(s), store={get(k,d){try{const raw=localStorage.getItem('sv_'+k);if(raw!==null)return JSON.parse(raw)}catch(e){}try{const raw=sessionStorage.getItem('sv_'+k);if(raw!==null)return JSON.parse(raw)}catch(e){}return d},set(k,v){const raw=JSON.stringify(v);try{localStorage.setItem('sv_'+k,raw);return true}catch(e){try{sessionStorage.setItem('sv_'+k,raw);return true}catch(_){return false}}}};
 let state={page:'Dashboard',theme:store.get('theme','night'),patient:null,patients:store.get('patients',[]),sessions:store.get('sessions',[]),recording:false,stream:null,recorder:null,chunks:[],pcmChunks:[],pcmProcessor:null,timer:null,seconds:0,analysis:null,tele:null,datasets:store.get('datasets',[]),experiments:store.get('experiments',[]),audioFiles:[],fileDirectory:null,pendingRecordingId:null};
@@ -430,9 +430,10 @@ function wire(){
     $('#hygieneProfile').addEventListener('change',renderH);renderH();on('printHygiene','click',()=>window.print());
   }
   on('saveClinical','click',()=>{
-    const id=state.patient?.id||'P-001';
-    store.set('history_'+id,{concern:$('#chConcern').value,onset:$('#chOnset').value,occupation:$('#chOcc').value,load:$('#chLoad').value,medical:$('#chMedical').value,treatment:$('#chTreatment').value,symptoms:[...document.querySelectorAll('.caseSym:checked')].map(x=>x.value),perceptual:$('#chPerceptual').value,resonance:$('#chResonance').value,impression:$('#chImpression').value,follow:$('#chFollow').value,updatedAt:new Date().toISOString()});
-    state.notice='Clinical assessment saved locally';render();
+    if(!state.patient){state.notice='Select a real participant before saving clinical information.';render();return}
+    const id=state.patient.id;
+    const ok=store.set('history_'+id,{concern:$('#chConcern').value,onset:$('#chOnset').value,occupation:$('#chOcc').value,load:$('#chLoad').value,medical:$('#chMedical').value,treatment:$('#chTreatment').value,symptoms:[...document.querySelectorAll('.caseSym:checked')].map(x=>x.value),perceptual:$('#chPerceptual').value,resonance:$('#chResonance').value,impression:$('#chImpression').value,follow:$('#chFollow').value,updatedAt:new Date().toISOString()});
+    state.notice=ok?'Clinical assessment saved locally for '+id:'Clinical assessment could not be saved in browser storage. Check browser storage permissions.';render();
   });
   on('printHealth','click',()=>window.print());
   on('clearHealth','click',()=>document.querySelectorAll('.vocalSymptom,.dailyVoice').forEach(x=>x.checked=false));
