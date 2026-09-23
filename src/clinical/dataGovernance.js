@@ -1,0 +1,5 @@
+export const RETENTION_POLICIES={research:{defaultDays:3650,description:"Research retention must follow the approved protocol and institutional policy."},clinical:{defaultDays:2555,description:"Clinical retention must follow applicable institutional/legal policy."},localPrototype:{defaultDays:0,description:"Local prototype data remain on the device until explicitly cleared."}};
+export function createConsentRecord({participantId,purpose,version}={}){return {id:crypto.randomUUID(),participantId,purpose,version,status:"pending",grantedAt:null,revokedAt:null,createdAt:new Date().toISOString()}}
+export function grantConsent(record){const now=new Date().toISOString();return {...record,status:"granted",grantedAt:now,revokedAt:null}}
+export function revokeConsent(record){const now=new Date().toISOString();return {...record,status:"revoked",revokedAt:now}}
+export function shouldRetain(createdAt,policy="localPrototype",now=Date.now()){const days=RETENTION_POLICIES[policy]?.defaultDays??0;return days===0?false:(now-new Date(createdAt).getTime())<=days*86400000}
