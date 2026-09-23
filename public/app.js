@@ -34,24 +34,30 @@ async function startRecord(){
     state.analyser.fftSize=2048;
     src.connect(state.analyser);
 
-    // Capture raw PCM through Web Audio instead of MediaRecorder.
-    // This avoids mobile codec/MediaRecorder failures and gives the DSP the
-    // actual microphone samples directly.
-    if(!state.audioContext.createScriptProcessor)throw new Error('Raw PCM capture is unavailable in this browser.');
+    // Capture raw PCM directly from Web Audio. Prefer AudioWorklet on modern
+    // mobile Chrome/Edge; retain ScriptProcessor only as a compatibility fallback.
     state.pcmChunks=[];
-    state.pcmProcessor=state.audioContext.createScriptProcessor(4096,1,1);
-    const mute=state.audioContext.createGain();
-    mute.gain.value=0;
-    state.pcmProcessor.onaudioprocess=e=>{
-      if(!state.recording)return;
-      const input=e.inputBuffer.getChannelData(0);
-      state.pcmChunks.push(new Float32Array(input));
-    };
-    src.connect(state.pcmProcessor);
-    state.pcmProcessor.connect(mute);
-    mute.connect(state.audioContext.destination);
-
     state.recording=true;
+    if(state.audioContext.audioWorklet){
+      await state.audioContext.audioWorklet.addModule('./pcm-worklet.js');
+      state.pcmProcessor=new AudioWorkletNode(state.audioContext,'phonacore-pcm',{numberOfInputs:1,numberOfOutputs:1,channelCount:1});
+      state.pcmProcessor.port.onmessage=e=>{
+        if(state.recording&&e.data?.length)state.pcmChunks.push(new Float32Array(e.data));
+      };
+      src.connect(state.pcmProcessor);
+      const mute=state.audioContext.createGain(); mute.gain.value=0;
+      state.pcmProcessor.connect(mute); mute.connect(state.audioContext.destination);
+    }else if(state.audioContext.createScriptProcessor){
+      state.pcmProcessor=state.audioContext.createScriptProcessor(4096,1,1);
+      const mute=state.audioContext.createGain(); mute.gain.value=0;
+      state.pcmProcessor.onaudioprocess=e=>{
+        if(state.recording)state.pcmChunks.push(new Float32Array(e.inputBuffer.getChannelData(0)));
+      };
+      src.connect(state.pcmProcessor);
+      state.pcmProcessor.connect(mute); mute.connect(state.audioContext.destination);
+    }else{
+      throw new Error('This browser cannot provide raw microphone samples.');
+    }
     state.seconds=0;
     state.notice='Recording… speak naturally.';
     state.timer=setInterval(updateCapture,1000);
