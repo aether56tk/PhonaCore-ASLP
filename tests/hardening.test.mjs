@@ -1,0 +1,10 @@
+import test from "node:test";import assert from "node:assert/strict";
+import {assessMetricValidity,annotateMeasurements} from "../src/acoustic/measurementPolicy.js";
+import {deviceQualificationResult,preprocessingExperiment} from "../research/deviceQualification.js";
+import {generateValidationReport} from "../src/reports/validationReport.js";
+test("metric validity blocks poor quality",()=>assert.equal(assessMetricValidity({parameter:"f0",qualityScore:20,voicedPercent:80}).valid,false));
+test("jitter requires cycles",()=>assert.equal(assessMetricValidity({parameter:"jitter",qualityScore:90,voicedPercent:80,cycleCount:3}).valid,false));
+test("annotation returns validity",()=>assert(annotateMeasurements({f0Mean:100},{qualityScore:90,voicedPercent:80,cycleCount:20}).validity.f0.valid));
+test("device qualification identifies missing tests",()=>assert.equal(deviceQualificationResult({recording:true}).qualified,false));
+test("preprocessing experiment computes delta",()=>assert.equal(preprocessingExperiment({f0Mean:100},{f0Mean:105}).deltas.f0Mean.absolute,5));
+test("validation report generates",()=>{const r=generateValidationReport([{reference:{f0:100},securavox:{f0:101}}]);assert.equal(r.n,1);assert.equal(r.parameters.f0.n,1)});
