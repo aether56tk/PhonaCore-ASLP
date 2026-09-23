@@ -97,7 +97,8 @@ function runReliabilityAnalysis(){
 function runValidityAnalysis(){const file=$('#validityFile')?.files?.[0];if(!file){$('#validityStatus').textContent='Select a paired CSV file.';return}file.text().then(t=>{try{const rows=parseCsv(t),p=rows.map(r=>({reference:r.reference,phonacore:r.phonacore})),report=PC_VALIDITY.criterionValidity(p);state.validityReport={schemaVersion:'1.0',generatedAt:new Date().toISOString(),file:file.name,parameter:$('#validityParam').value,reference:$('#validityReference').value,results:report};$('#validityStatus').textContent='Analyzed '+rows.length+' CSV rows.';renderValidityReport(report)}catch(e){$('#validityStatus').textContent='Validity error: '+e.message}})}
 function wire(){
   const on=(id,event,handler)=>{const el=$('#'+id);if(el)el.addEventListener(event,handler);};
-  on('runReliability','click',runReliabilityAnalysis);\n  on('runValidity','click',runValidityAnalysis);
+  on('runReliability','click',runReliabilityAnalysis );
+  on('runValidity','click',runValidityAnalysis);
   on('exportValidity','click',()=>{if(state.validityReport)download('phonacore-validity-report.json',state.validityReport)});
   on('clearValidity','click',()=>{state.validityReport=null;render()});
   on('exportReliability','click',()=>{if(state.reliabilityReport)download('phonacore-reliability-report.json',state.reliabilityReport)});
