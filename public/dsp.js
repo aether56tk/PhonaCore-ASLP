@@ -174,8 +174,15 @@ function spectralCepstrumCPP(samples,sr){
   }
   return Number.isFinite(best)?best:null;
 }
-function analyzeVoiceFast(samples,sr){
-  const clean=normalize(removeDC(samples)),durationSec=samples.length/sr;
+function analyzeVoiceFast(samples,sr,task='vowel'){
+  const originalDurationSec=samples.length/sr;
+  let work=samples;
+  if((task==='vowel'||task==='mpt')&&originalDurationSec>3){
+    const keep=Math.min(samples.length,Math.round(sr*3));
+    const start=Math.max(0,Math.floor((samples.length-keep)/2));
+    work=samples.slice(start,start+keep);
+  }
+  const clean=normalize(removeDC(work)),durationSec=work.length/sr;
   const track=pitchTrack(clean,sr),voiced=track.filter(x=>Number.isFinite(x.f0)),f0s=voiced.map(x=>x.f0);
   const pf=periodFeatures(track),af=amplitudeFeatures(track);
   const periods=track.filter(x=>Number.isFinite(x.f0)).map((x,i)=>({index:i,time:x.time,startSample:Math.max(0,Math.round(x.time*sr)),endSample:Math.max(0,Math.round((x.time+(1/x.f0))*sr)),periodSec:1/x.f0,f0:x.f0,peakToPeak:Math.max(1e-12,x.rms*2),confidence:1}));
@@ -193,7 +200,7 @@ function analyzeVoiceFast(samples,sr){
     nhr:noise.nhr,vti:noise.vti,spi:noise.spi,cppPrototypeDb:cpp,voicedPct,clippedPct:clipped,
     rmsDb:20*Math.log10(Math.max(r,1e-9)),peakDb:20*Math.log10(Math.max(p,1e-9)),
     quality:{score:quality,label:quality>=80?'Good':quality>=60?'Review':'Poor',issues:[...(clipped>1?['Clipping detected']:[]),...(voicedPct<30?['Low voiced-frame proportion']:[]),...(durationSec<2?['Short recording']:[])]},
-    pitchTrack:track,periods,periodLevel:{validPeriods:periods.length,periods:periods.map(p=>p.periodSec),f0:periods.map(p=>p.f0),amplitude:periods.map(p=>p.peakToPeak),records:periods},
+    pitchTrack:track,periods,analysisWindow:{durationSec,originalDurationSec,selection:durationSec<originalDurationSec?'middle':'full'},periodLevel:{validPeriods:periods.length,periods:periods.map(p=>p.periodSec),f0:periods.map(p=>p.f0),amplitude:periods.map(p=>p.peakToPeak),records:periods},
     measurementStatus:{
       core:'prototype-fast',
       mdvpComparable:['F0','Fhi','Flo','STD','Jita','Jitt','RAP','PPQ','sPPQ','vF0','ShdB','Shim','APQ','sAPQ','vAm','NHR'],
