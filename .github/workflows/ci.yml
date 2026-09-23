@@ -20,7 +20,6 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 20
-          cache: npm
       - name: Install
         run: npm install
       - name: Test
@@ -29,5 +28,3 @@ jobs:
         run: npm run build
       - name: Synthetic benchmark
         run: npm run synthetic:benchmark
-      - name: Full CI
-        run: npm run ci
