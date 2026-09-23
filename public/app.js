@@ -1,5 +1,5 @@
 const {analyzeVoice,stats,mean,sd}=window.SV_DSP;
-const $=s=>document.querySelector(s), store={get(k,d){try{return JSON.parse(localStorage.getItem('sv_'+k))??d}catch{return d}},set(k,v){localStorage.setItem('sv_'+k,JSON.stringify(v))}};
+const $=s=>document.querySelector(s), store={get(k,d){try{return JSON.parse(localStorage.getItem('sv_'+k))??d}catch{return d}},set(k,v){try{localStorage.setItem('sv_'+k,JSON.stringify(v));return true}catch(e){return false}}};
 let state={page:'Dashboard',theme:store.get('theme','night'),patient:null,patients:store.get('patients',[]),sessions:store.get('sessions',[]),recording:false,stream:null,recorder:null,chunks:[],timer:null,seconds:0,analysis:null,tele:null,datasets:store.get('datasets',[]),experiments:store.get('experiments',[])};
 if(!state.patients.length){state.patients=[{id:'P-001',name:'Patient Alpha',age:21,sex:'F'},{id:'P-002',name:'Patient Beta',age:34,sex:'M'},{id:'P-003',name:'Patient Gamma',age:17,sex:'F'}];store.set('patients',state.patients)}
 const nav=['Dashboard','Patients','Clinical','Assessments','Voice Lab','Reports','Tele-Assessment','Research Lab','Study Protocol','Batch Research','Validation 2.0','Algorithm Validation','Reliability Lab','Validity Lab','Study Manager & Final QA','Datasets','Statistics','Security','Settings'];
@@ -84,6 +84,9 @@ async function finishRecord(){
     state.recording=false;
     state.stream=null;
     state.recorder=null;
+    if(state.audioContext&&state.audioContext.state!=='closed')await state.audioContext.close().catch(()=>{});
+    state.audioContext=null;
+    state.analyser=null;
     state.notice='Recording analyzed successfully.';
     render();
   }catch(e){
@@ -284,7 +287,8 @@ function wire(){
   document.querySelectorAll('[data-pid]').forEach(x=>x.onclick=()=>{state.patient=state.patients.find(p=>p.id===x.dataset.pid);render()});
   on('addP','click',()=>{const name=prompt('Patient display name');if(!name)return;const id='P-'+String(state.patients.length+1).padStart(3,'0');state.patients.push({id,name,age:'',sex:''});store.set('patients',state.patients);render()});
   document.querySelectorAll('[data-task]').forEach(x=>x.onclick=()=>{state.page='Voice Lab';render();setTimeout(()=>{const t=$('#task');if(t)t.value=x.dataset.task},0)});
-  on('record','click',startRecord);on('stop','click',()=>{if(state.recorder&&state.recorder.state!=='inactive')state.recorder.stop();else{cleanupRecording();state.recording=false;state.notice='No active recording.';render()}});on('reset','click',()=>{state.analysis=null;render()});on('saveSession','click',saveSession);on('exportJSON','click',()=>download('phonacore-analysis.json',state.analysis));
+  on('record','click',startRecord);on('stop','click',()=>{if(state.recorder&&state.recorder.state!=='inactive')state.recorder.stop();else{cleanupRecording();state.recording=false;state.notice='No active recording.';render()}});on('reset','click',()=>{state.analysis=null;state.notice='Analysis reset.';render()});on('saveSession','click',saveSession);
+  on('task','change',e=>{state.voiceTask=e.target.value;state.analysis=null;state.notice='Task set to '+e.target.options[e.target.selectedIndex].text+'.';render()});on('exportJSON','click',()=>{if(state.analysis)download('phonacore-analysis.json',state.analysis);else{state.notice='No analysis to export.';render()}});
   document.querySelectorAll('[data-report]').forEach(b=>b.onclick=()=>download('phonacore-report.json',state.sessions.find(s=>s.id===b.dataset.report)));
   on('newTele','click',()=>{state.tele={id:'TEL-'+Date.now().toString(36),status:'created',consent:false};render()});
   on('consent','click',()=>{if(!state.tele)return;state.tele.consent=true;state.tele.status='ready';render()});
@@ -293,5 +297,6 @@ function wire(){
   on('createDs','click',()=>{state.datasets.unshift({id:'DS-'+Date.now().toString(36),name:$('#dsname').value,samples:[]});store.set('datasets',state.datasets);render()});
   on('downloadAll','click',()=>download('phonacore-local-export.json',{patients:state.patients,sessions:state.sessions,datasets:state.datasets,experiments:state.experiments,exportedAt:new Date().toISOString()}));
 }
-function f(x){return Number.isFinite(x)?x.toFixed(2):'—'}function download(name,data){const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([JSON.stringify(data,null,2)],{type:'application/json'}));a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000)}
+function f(x){return Number.isFinite(x)?x.toFixed(2):'—'}
+function download(name,data){try{const a=document.createElement('a'),url=URL.createObjectURL(new Blob([JSON.stringify(data,null,2)],{type:'application/json'}));a.href=url;a.download=name;a.rel='noopener';document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);state.notice='Download prepared: '+name}catch(e){state.notice='Download failed: '+e.message}render()}
 render();
