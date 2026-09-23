@@ -122,7 +122,7 @@ PhonaCore-ASLP/
 ├── tests/               # Automated software tests
 ├── server.js            # Local development server
 ├── package.json         # Project configuration
-└── .github/workflows/   # Automated verification
+└── .github/workflows/   # Automated verification and Pages deployment
 ```
 
 ## Status
