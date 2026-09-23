@@ -438,7 +438,8 @@ function wire(){
   on('clearHealth','click',()=>document.querySelectorAll('.vocalSymptom,.dailyVoice').forEach(x=>x.checked=false));
   on('runMdvp','click',runMdvpValidation);
   on('clearMdvp','click',()=>{$('#mdvpResult').innerHTML=''});
-  on('newA','click',startNewAssessment);\n  on('continueDash','click',()=>{if(state.patient){state.page='Clinical';state.notice='Continue the clinical assessment before recording.';render()}else{startNewAssessment()}});
+  on('newA','click',startNewAssessment);
+  on('continueDash','click',()=>{if(state.patient){state.page='Clinical';state.notice='Continue the clinical assessment before recording.';render()}else{startNewAssessment()}});
   on('patientAssess','click',()=>{if(!state.patient){state.page='Patients';state.notice='Select a real participant first.'}else{state.page='Clinical';state.notice='Complete or review the clinical assessment before recording.'}render()});
   on('continueVoiceLab','click',()=>{if(!state.patient){state.page='Patients';state.notice='Select a real participant first.'}else{state.page='Voice Lab';state.notice='Voice Lab ready for '+(state.patient.name||state.patient.id)+'.'}render()});
   on('goPatients','click',()=>{state.page='Patients';render()});
