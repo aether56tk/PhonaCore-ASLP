@@ -1,6 +1,6 @@
 const {analyzeVoice,stats,mean,sd}=window.SV_DSP;
 const $=s=>document.querySelector(s), store={get(k,d){try{return JSON.parse(localStorage.getItem('sv_'+k))??d}catch{return d}},set(k,v){try{localStorage.setItem('sv_'+k,JSON.stringify(v));return true}catch(e){return false}}};
-let state={page:'Dashboard',theme:store.get('theme','night'),patient:null,patients:store.get('patients',[]),sessions:store.get('sessions',[]),recording:false,stream:null,recorder:null,chunks:[],timer:null,seconds:0,analysis:null,tele:null,datasets:store.get('datasets',[]),experiments:store.get('experiments',[])};
+let state={page:'Dashboard',theme:store.get('theme','night'),patient:null,patients:store.get('patients',[]),sessions:store.get('sessions',[]),recording:false,stream:null,recorder:null,chunks:[],pcmChunks:[],pcmProcessor:null,timer:null,seconds:0,analysis:null,tele:null,datasets:store.get('datasets',[]),experiments:store.get('experiments',[])};
 if(!state.patients.length){state.patients=[{id:'P-001',name:'Patient Alpha',age:21,sex:'F'},{id:'P-002',name:'Patient Beta',age:34,sex:'M'},{id:'P-003',name:'Patient Gamma',age:17,sex:'F'}];store.set('patients',state.patients)}
 const nav=['Dashboard','Patients','Clinical','Assessments','Voice Lab','Reports','Tele-Assessment','Research Lab','Study Protocol','Batch Research','Validation 2.0','Algorithm Validation','Reliability Lab','Validity Lab','Study Manager & Final QA','Datasets','Statistics','Security','Settings'];
 function render(){document.body.dataset.theme=state.theme;document.body.innerHTML=`<div class="layout"><aside class="side"><div class="brand">PhonaCore<small>ASLP • FULL BUILD</small></div>${nav.map(n=>`<button class="nav ${state.page===n?'active':''}" data-page="${n}">${n}</button>`).join('')}</aside><main class="main"><div class="top"><span>PhonaCore-ASLP / ${state.page}</span><div class="topActions"><button class="btn primary" id="globalNewAssessment">＋ New assessment</button><button class="btn" id="themeToggle">${state.theme==='night'?'☀ Daylight':'☾ Night'}</button><button class="btn" id="clear">Clear data</button></div></div><section class="content">${page()}</section></main>${state.notice?`<div class="toast">${state.notice}</div>`:''}</div>`;document.querySelectorAll('[data-page]').forEach(b=>b.onclick=()=>{state.page=b.dataset.page;render()});$('#clear').onclick=()=>{if(confirm('Clear all local PhonaCore data?')){for(const k of ['sessions','patients','datasets','experiments'])localStorage.removeItem('sv_'+k);location.reload()}};wire()}
@@ -17,20 +17,15 @@ function analysisView(a){const pts=(a.pitchTrack||[]).filter(x=>x.f0).map(x=>x.f
 function line(vals){if(!vals.length)return'<div class="empty">No reliable pitch frames.</div>';const min=Math.min(...vals),max=Math.max(...vals);const pts=vals.map((v,i)=>i/(vals.length-1||1)*800+','+(210-(v-min)/(max-min||1)*190)).join(' ');return'<svg viewBox="0 0 800 220" preserveAspectRatio="none" style="width:100%;height:100%"><polyline fill="none" stroke="currentColor" stroke-width="3" points="'+pts+'"/></svg>'}
 async function startRecord(){
   try{
-    if(!window.isSecureContext){throw new Error('Microphone access requires HTTPS. Open the GitHub Pages HTTPS address.')}
-    if(!navigator.mediaDevices?.getUserMedia){throw new Error('This browser does not provide microphone access. Use a current Chrome, Edge, or Firefox browser.')}
-    if(typeof MediaRecorder==='undefined'){throw new Error('This browser does not support MediaRecorder. Use the latest Chrome, Edge, Firefox, or Safari.')} 
+    if(!window.isSecureContext)throw new Error('Microphone access requires HTTPS.');
+    if(!navigator.mediaDevices?.getUserMedia)throw new Error('This browser does not provide microphone access.');
     const C=window.AudioContext||window.webkitAudioContext;
-    if(!C)throw new Error('Web Audio API is not available in this browser.');
+    if(!C)throw new Error('Web Audio API is not available.');
     state.voiceTask=$('#task')?.value||'vowel';
     let permission='unknown';
-    try{if(navigator.permissions?.query){permission=(await navigator.permissions.query({name:'microphone'})).state;}}catch(_){}
-    if(permission==='denied'){
-      throw new Error('Microphone permission is blocked for this site. In Chrome tap the lock/tune icon beside the address → Permissions → Microphone → Allow, then reload the page.');
-    }
+    try{if(navigator.permissions?.query)permission=(await navigator.permissions.query({name:'microphone'})).state}catch(_){}
+    if(permission==='denied')throw new Error('Microphone permission is blocked for this site. Allow Microphone for this site in Chrome settings and reload.');
     state.notice='Requesting microphone permission…';
-    // Start with the least restrictive request. Some mobile browsers reject advanced
-    // audio constraints even though microphone access itself is available.
     state.stream=await navigator.mediaDevices.getUserMedia({audio:true});
     state.audioContext=new C();
     if(state.audioContext.state==='suspended')await state.audioContext.resume();
@@ -38,19 +33,24 @@ async function startRecord(){
     state.analyser=state.audioContext.createAnalyser();
     state.analyser.fftSize=2048;
     src.connect(state.analyser);
-    const preferred=['audio/webm;codecs=opus','audio/webm','audio/ogg;codecs=opus','audio/mp4'];
-    const mime=typeof MediaRecorder!=='undefined'&&typeof MediaRecorder.isTypeSupported==='function'?preferred.find(x=>MediaRecorder.isTypeSupported(x))||'':'';
-    state.recorder=mime?new MediaRecorder(state.stream,{mimeType:mime}):new MediaRecorder(state.stream);
-    state.recorder.onstart=()=>{state.notice='Recording started. Speak naturally.'};
-    state.chunks=[];
-    state.recorder.ondataavailable=e=>{if(e.data?.size)state.chunks.push(e.data)};
-    state.recorder.onerror=e=>{
-      const n=e?.error?.name||'UnknownError',m=e?.error?.message||'Unable to record';
-      state.notice='MediaRecorder error ('+n+'): '+m;
-      cleanupRecording();state.recording=false;render()
+
+    // Capture raw PCM through Web Audio instead of MediaRecorder.
+    // This avoids mobile codec/MediaRecorder failures and gives the DSP the
+    // actual microphone samples directly.
+    if(!state.audioContext.createScriptProcessor)throw new Error('Raw PCM capture is unavailable in this browser.');
+    state.pcmChunks=[];
+    state.pcmProcessor=state.audioContext.createScriptProcessor(4096,1,1);
+    const mute=state.audioContext.createGain();
+    mute.gain.value=0;
+    state.pcmProcessor.onaudioprocess=e=>{
+      if(!state.recording)return;
+      const input=e.inputBuffer.getChannelData(0);
+      state.pcmChunks.push(new Float32Array(input));
     };
-    state.recorder.onstop=()=>finishRecord();
-    state.recorder.start(250);
+    src.connect(state.pcmProcessor);
+    state.pcmProcessor.connect(mute);
+    mute.connect(state.audioContext.destination);
+
     state.recording=true;
     state.seconds=0;
     state.notice='Recording… speak naturally.';
@@ -60,29 +60,52 @@ async function startRecord(){
     cleanupRecording();
     state.recording=false;
     const name=e?.name||'UnknownError';
-    const detail=name==='NotAllowedError'
-      ?'Microphone permission was denied or blocked. Open this site in Chrome → site settings/lock icon → Microphone → Allow, then reload.'
+    state.notice=name==='NotAllowedError'
+      ?'Microphone permission was denied or blocked. Allow Microphone for this site and retry.'
       :name==='NotFoundError'
-      ?'No microphone was detected by the browser. Check Android microphone access and that another app is not exclusively using it.'
+      ?'No microphone was detected by the browser.'
       :name==='NotReadableError'
-      ?'The microphone exists but cannot be read. Close other apps using the microphone, then retry.'
-      :name==='SecurityError'
-      ?'The browser blocked microphone access for this page. Use the HTTPS GitHub Pages address and allow Microphone.'
-      :name==='OverconstrainedError'
-      ?'The browser rejected an audio constraint. PhonaCore has switched to a basic microphone request.'
+      ?'The microphone is busy or cannot be read. Close other apps using the microphone and retry.'
       :'Microphone error ('+name+'): '+(e?.message||e);
-    state.notice=detail;
     render();
   }
 }
 window.__PhonaCoreRecord=()=>startRecord();
 window.__PhonaCoreStop=()=>{
-  const r=state.recorder;
-  if(r&&r.state!=='inactive'){
-    try{if(typeof r.requestData==='function')r.requestData()}catch(_){}
-    setTimeout(()=>{try{if(r.state!=='inactive')r.stop()}catch(e){state.notice='Recorder stop failed: '+(e.message||e);cleanupRecording();state.recording=false;render()}},120);
-  }else{cleanupRecording();state.recording=false;state.notice='No active recording.';render()}
+  if(!state.recording){state.notice='No active recording.';render();return}
+  state.recording=false;
+  clearInterval(state.timer);state.timer=null;
+  finishPCM();
 };
+async function finishPCM(){
+  try{
+    const chunks=state.pcmChunks||[];
+    const total=chunks.reduce((n,x)=>n+x.length,0);
+    if(!total)throw new Error('The microphone opened but produced no PCM samples.');
+    const pcm=new Float32Array(total);
+    let at=0;for(const x of chunks){pcm.set(x,at);at+=x.length}
+    const sr=state.audioContext?.sampleRate||44100;
+    const C=window.AudioContext||window.webkitAudioContext;
+    const ac=state.audioContext||new C();
+    const buf=ac.createBuffer(1,pcm.length,sr);
+    buf.copyToChannel(pcm,0);
+    const ch=new Float32Array(buf.getChannelData(0));
+    const task=state.voiceTask||'vowel';
+    state.analysis=analyzeVoice(ch,sr);
+    state.analysis.task=task;
+    state.analysis.taskMetrics=window.SV_DSP.taskSpecificMetrics(ch,sr,task);
+    state.analysis.measurementStatus.gate=window.SV_DSP.measurementGate(state.analysis);
+    state.analysis.recordingMeta={sampleRate:sr,channels:1,duration:pcm.length/sr,codec:'PCM/Web Audio'};
+    cleanupRecording();
+    state.notice='Recording analyzed successfully.';
+    render();
+  }catch(e){
+    cleanupRecording();
+    state.recording=false;
+    state.notice='Recording analysis failed: '+(e?.message||e);
+    render();
+  }
+}
 function handleAudioFallback(file){if(!file)return;const reader=new FileReader();reader.onload=async()=>{try{const C=window.AudioContext||window.webkitAudioContext;if(!C)throw new Error('Web Audio API unavailable.');const ac=new C();const buf=await ac.decodeAudioData(reader.result);const ch=new Float32Array(buf.getChannelData(0));const task=state.voiceTask||'vowel';state.analysis=analyzeVoice(ch,buf.sampleRate);state.analysis.task=task;state.analysis.taskMetrics=window.SV_DSP.taskSpecificMetrics(ch,buf.sampleRate,task);state.analysis.measurementStatus.gate=window.SV_DSP.measurementGate(state.analysis);state.analysis.recordingMeta={sampleRate:buf.sampleRate,channels:buf.numberOfChannels,duration:buf.duration,source:'mobile audio capture/file'};await ac.close().catch(()=>{});state.recording=false;state.notice='Audio captured and analyzed.';render()}catch(e){state.recording=false;state.notice='Audio analysis failed: '+(e.message||e);render()}};reader.readAsArrayBuffer(file)}
 function offerAudioFallback(){const input=document.createElement('input');input.type='file';input.accept='audio/*';input.setAttribute('capture','user');input.style.display='none';input.onchange=()=>handleAudioFallback(input.files?.[0]);document.body.appendChild(input);input.click();setTimeout(()=>input.remove(),60000)}
 function cleanupRecording(){
