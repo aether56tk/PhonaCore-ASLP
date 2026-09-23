@@ -1,5 +1,5 @@
 /* PhonaCore-ASLP build: 2026-09-23-fix-algorithm-validation */
-window.__PHONACORE_BUILD='2026-09-23-final-qa1';
+window.__PHONACORE_BUILD='2026-09-23-final-qa2';
 const {analyzeVoice,stats,mean,sd}=window.SV_DSP;
 const $=s=>document.querySelector(s), store={get(k,d){try{return JSON.parse(localStorage.getItem('sv_'+k))??d}catch{return d}},set(k,v){try{localStorage.setItem('sv_'+k,JSON.stringify(v));return true}catch(e){return false}}};
 let state={page:'Dashboard',theme:store.get('theme','night'),patient:null,patients:store.get('patients',[]),sessions:store.get('sessions',[]),recording:false,stream:null,recorder:null,chunks:[],pcmChunks:[],pcmProcessor:null,timer:null,seconds:0,analysis:null,tele:null,datasets:store.get('datasets',[]),experiments:store.get('experiments',[])};
@@ -120,7 +120,7 @@ async function finishPCM(){
       },0);
       return;
     }
-    const worker=new Worker('./analysis-worker.js?build=20260923-qa1');
+    const worker=new Worker('./analysis-worker.js?build=20260923-qa2');
     state.analysisWorker=worker;
     worker.onmessage=e=>{
       const msg=e.data||{};
