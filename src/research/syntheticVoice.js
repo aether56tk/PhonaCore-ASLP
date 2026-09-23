@@ -21,8 +21,7 @@ export function sineVoice({sampleRate=16000,periods=120,baseF0=120,jitterPct=0,a
     phase+=2*Math.PI;
     pos+=n;
   }
-  const periods=periodsSec;
-  const f0=periods.map(p=>1/p);
+  const f0=periodsSec.map(p=>1/p);
   const theoretical={
     f0Mean:mean(f0),
     f0Sd:sd(f0),
