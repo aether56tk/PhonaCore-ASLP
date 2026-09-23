@@ -1,5 +1,5 @@
-/* PhonaCore-ASLP build: 2026-09-23-no-worklet */
-window.__PHONACORE_BUILD='2026-09-23-no-worklet';
+/* PhonaCore-ASLP build: 2026-09-23-fix-algorithm-validation */
+window.__PHONACORE_BUILD='2026-09-23-fix-algorithm-validation';
 const {analyzeVoice,stats,mean,sd}=window.SV_DSP;
 const $=s=>document.querySelector(s), store={get(k,d){try{return JSON.parse(localStorage.getItem('sv_'+k))??d}catch{return d}},set(k,v){try{localStorage.setItem('sv_'+k,JSON.stringify(v));return true}catch(e){return false}}};
 let state={page:'Dashboard',theme:store.get('theme','night'),patient:null,patients:store.get('patients',[]),sessions:store.get('sessions',[]),recording:false,stream:null,recorder:null,chunks:[],pcmChunks:[],pcmProcessor:null,timer:null,seconds:0,analysis:null,tele:null,datasets:store.get('datasets',[]),experiments:store.get('experiments',[])};
@@ -242,6 +242,31 @@ function security(){return head('Security Center','Privacy and deployment contro
 function settings(){return head('Settings','Application controls and local storage.')+card('Storage',`<p>Sessions: ${state.sessions.length}</p><p>Patients: ${state.patients.length}</p><p>Datasets: ${state.datasets.length}</p><button class="btn" id="downloadAll">Export all local data</button>`) +card('About','<p>PhonaCore-ASLP Browser Build v1.0.</p><p class="small">Engineering-complete browser software does not equal clinical validation or regulatory certification.</p>')}
 async function runMdvpValidation(){const pf=$('#phonaFile')?.files[0],mf=$('#mdvpFile')?.files[0],out=$('#mdvpResult');if(!pf||!mf){out.innerHTML='<div class="notice">Select both files.</div>';return}try{const pj=JSON.parse(await pf.text()),phona=Array.isArray(pj)?pj:(pj.results||pj.sessions||[pj]),rows=parseSimpleCSV(await mf.text()),by=new Map(phona.map(x=>{const z=x.analysis||x.m||x;return[String(z.sample_id??z.sampleId??z.id),z]}));const map=[['F0','f0Mean'],['Fhi','f0Max'],['Flo','f0Min'],['STD','f0Sd'],['Jita','jitaUs'],['Jitt','jittPct'],['RAP','rapPct'],['PPQ','ppqPct'],['sPPQ','sppqPct'],['vF0','vf0Pct'],['ShdB','shdB'],['Shim','shimPct'],['APQ','apqPct'],['sAPQ','sapqPct'],['vAm','vamPct'],['NHR','nhr']],pairs=rows.map(r=>({p:by.get(String(r.sample_id)),m:r})).filter(q=>q.p),outStats=map.map(([m,f])=>{const v=pairs.map(q=>[Number(q.p[f]),Number(q.m[m])]).filter(q=>Number.isFinite(q[0])&&Number.isFinite(q[1]));if(!v.length)return{m,n:0};const d=v.map(q=>q[0]-q[1]),b=d.reduce((s,x)=>s+x,0)/d.length,mae=d.reduce((s,x)=>s+Math.abs(x),0)/d.length,rmse=Math.sqrt(d.reduce((s,x)=>s+x*x,0)/d.length),s=d.length>1?Math.sqrt(d.reduce((z,x)=>z+(x-b)**2,0)/(d.length-1)):0;return{m,n:v.length,b,mae,rmse,lo:b-1.96*s,hi:b+1.96*s}});out.innerHTML='<div class="notice">Paired samples: <b>'+pairs.length+'</b>. Correlation is not agreement.</div><div class="tablewrap"><table><thead><tr><th>MDVP</th><th>N</th><th>Bias</th><th>MAE</th><th>RMSE</th><th>95% LoA</th></tr></thead><tbody>'+outStats.map(s=>'<tr><td>'+s.m+'</td><td>'+s.n+'</td><td>'+(s.n?f(s.b):'—')+'</td><td>'+(s.n?f(s.mae):'—')+'</td><td>'+(s.n?f(s.rmse):'—')+'</td><td>'+(s.n?f(s.lo)+' to '+f(s.hi):'—')+'</td></tr>').join('')+'</tbody></table></div>'}catch(e){out.innerHTML='<div class="notice">Validation error: '+e.message+'</div>'}}
 function parseSimpleCSV(t){const lines=t.trim().split(/\r?\n/).filter(Boolean);if(!lines.length)return[];const h=lines[0].split(',').map(x=>x.trim());return lines.slice(1).map(line=>{const v=line.split(',');return Object.fromEntries(h.map((k,i)=>[k,(v[i]??'').trim()]))})}
+function runAlgorithmValidationAnalysis(){
+  const status=$('#avStatus');
+  try{
+    if(!window.PC_ALGORITHM_VALIDATION?.run) throw new Error('Algorithm validation module is unavailable.');
+    const t={
+      F0:Number($('#avF0')?.value)||2,
+      Jitt:Number($('#avPert')?.value)||1,
+      RAP:Number($('#avPert')?.value)||1,
+      PPQ:Number($('#avPert')?.value)||1,
+      sPPQ:Number($('#avPert')?.value)||1,
+      vF0:Number($('#avPert')?.value)||1,
+      Shim:Number($('#avAmp')?.value)||3,
+      APQ:Number($('#avAmp')?.value)||3,
+      sAPQ:Number($('#avAmp')?.value)||3,
+      vAm:Number($('#avAmp')?.value)||3
+    };
+    const report=window.PC_ALGORITHM_VALIDATION.run(t);
+    state.algorithmValidation=report;
+    renderAlgorithmValidation(report);
+    if(status)status.textContent='Synthetic algorithm validation completed.';
+  }catch(e){
+    if(status)status.textContent='Algorithm validation error: '+(e?.message||e);
+    console.error('PhonaCore algorithm validation failed',e);
+  }
+}
 function runReliabilityAnalysis(){
   const file=$('#relFile')?.files?.[0];if(!file){$('#relStatus').textContent='Select a CSV file.';return}
   file.text().then(text=>{try{
