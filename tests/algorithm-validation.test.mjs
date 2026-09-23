@@ -1,0 +1,3 @@
+import test from 'node:test';import assert from 'node:assert/strict';import {runAlgorithmValidation,validationReadiness,ALGORITHM_PARAMETERS} from '../src/research/algorithmValidation.js';
+test('algorithm validation returns all controlled cases and parameters',()=>{const r=runAlgorithmValidation();assert.equal(r.cases.length,4);assert.equal(r.parameters.length,ALGORITHM_PARAMETERS.length);assert.equal(typeof r.overallPass,'boolean')});
+test('readiness blocks missing or failed validation',()=>{assert.equal(validationReadiness(null).ready,false);assert.equal(validationReadiness({overallPass:false,cases:[]}).ready,false);assert.equal(validationReadiness({overallPass:true,cases:[{failures:[]}]}).ready,true)});
