@@ -12,12 +12,86 @@ function clinical(){const p=state.patient||state.patients[0];const h=store.get('
 function assessments(){return head('Assessments','Start structured voice tasks and review completed sessions.',btn('＋ New assessment','newA'))+card('Tasks',`<div class="grid2">${['Sustained vowel','Reading','Counting','Conversation'].map((x,i)=>`<button class="patient" data-task="${i===0?'vowel':i===1?'reading':i===2?'counting':'conversation'}"><b>${x}</b><small>Measurement-oriented recording task</small></button>`).join('')}</div>`)+card('Completed',state.sessions.length?sessionTable():`<div class="empty">No completed sessions.</div>`)}
 function sessionTable(){return`<div class="tablewrap"><table><thead><tr><th>ID</th><th>Patient</th><th>Task</th><th>F₀</th><th>Jitter</th><th>Shimmer</th><th>CPP</th><th>Quality</th></tr></thead><tbody>${state.sessions.map(s=>`<tr><td>${s.id}</td><td>${s.patientId}</td><td>${s.task}</td><td>${f(s.m.f0Mean)} Hz</td><td>${f(s.m.jitterLocalPct)}%</td><td>${f(s.m.shimmerLocalPct)}%</td><td>${f(s.m.cppPrototypeDb)}</td><td>${s.quality.score}/100</td></tr>`).join('')}</tbody></table></div>`}
 function taskGuide(task){const g={vowel:['Sustained /a/','Take a comfortable breath and sustain /a/ at habitual pitch and loudness for 5–10 seconds.'],reading:['Standard reading','Read naturally at comfortable loudness and pitch.'],counting:['Counting','Count 1–20 naturally.'],conversation:['Spontaneous speech','Speak naturally for 20–30 seconds.'],mpt:['Maximum phonation time','Sustain /a/ for as long as comfortably possible without strain.'],pitchrange:['Pitch range','Glide from lowest comfortable pitch to highest comfortable pitch without strain.'],intensity:['Loudness / intensity','Produce soft, habitual and loud voice levels without shouting.']}[task]||[];return card('Task instructions','<b>'+g[0]+'</b><p class="small">'+g[1]+'</p>')}
-function voice(){if(!state.patient)state.patient=state.patients[0];const a=state.analysis;const task=state.voiceTask||'vowel';const opts=[['vowel','Sustained vowel'],['reading','Reading'],['counting','Counting'],['conversation','Conversation'],['mpt','Maximum phonation time'],['pitchrange','Pitch range'],['intensity','Loudness / intensity']];return head('Voice Lab','Standardized acquisition, quality control and acoustic analysis.', '<span class="tag">'+(state.recording?'RECORDING':'READY')+'</span>')+'<div class="toolbar"><select id="task">'+opts.map(x=>'<option value="'+x[0]+'" '+(task===x[0]?'selected':'')+'>'+x[1]+'</option>').join('')+'</select>'+(state.recording?btn('■ Stop','stop'):btn('● Record','record'))+btn('▣ Reset','reset')+'</div>'+taskGuide(task)+card('Capture','<div class="recording"><div class="timer">'+String(Math.floor(state.seconds/60)).padStart(2,'0')+':'+String(state.seconds%60).padStart(2,'0')+'</div><div style="flex:1"><div class="level"><i id="level"></i></div><div class="small">Mono • echo cancellation OFF • noise suppression OFF • auto gain OFF</div><div id="captureMeta" class="small">Ready for recording.</div></div></div>')+(a?analysisView(a):card('Standardized capture protocol','<ol class="clean"><li>Use a quiet room.</li><li>Keep microphone position stable.</li><li>Use the same device/task for repeat measurements.</li><li>Do not deliberately alter the voice.</li><li>Review quality flags before interpretation.</li></ol>'))}
+function voice(){if(!state.patient)state.patient=state.patients[0];const a=state.analysis;const task=state.voiceTask||'vowel';const opts=[['vowel','Sustained vowel'],['reading','Reading'],['counting','Counting'],['conversation','Conversation'],['mpt','Maximum phonation time'],['pitchrange','Pitch range'],['intensity','Loudness / intensity']];return head('Voice Lab','Standardized acquisition, quality control and acoustic analysis.', '<span class="tag">'+(state.recording?'RECORDING':'READY')+'</span>')+'<div class="toolbar"><select id="task">'+opts.map(x=>'<option value="'+x[0]+'" '+(task===x[0]?'selected':'')+'>'+x[1]+'</option>').join('')+'</select>'+(state.recording?btn('■ Stop','stop'):btn('● Record','record'))+btn('▣ Reset','reset')+'</div>'+taskGuide(task)+card('Capture','<div class="recording"><div class="timer">'+String(Math.floor(state.seconds/60)).padStart(2,'0')+':'+String(state.seconds%60).padStart(2,'0')+'</div><div style="flex:1"><div class="level"><i id="level"></i></div><div class="small">Mono • echo cancellation OFF • noise suppression OFF • auto gain OFF</div><div id="captureMeta" class="small">${state.notice||'Ready for recording.'}</div></div></div>')+(a?analysisView(a):card('Standardized capture protocol','<ol class="clean"><li>Use a quiet room.</li><li>Keep microphone position stable.</li><li>Use the same device/task for repeat measurements.</li><li>Do not deliberately alter the voice.</li><li>Review quality flags before interpretation.</li></ol>'))}
 function analysisView(a){const pts=(a.pitchTrack||[]).filter(x=>x.f0).map(x=>x.f0);const rows=[['F0 mean',a.f0Mean,'Hz'],['F0 minimum',a.f0Min,'Hz'],['F0 maximum',a.f0Max,'Hz'],['F0 SD',a.f0Sd,'Hz'],['T0',a.t0Ms,'ms'],['Jita',a.jitaUs,'µs'],['Jitt',a.jittPct,'%'],['RAP',a.rapPct,'%'],['PPQ',a.ppqPct,'%'],['sPPQ',a.sppqPct,'%'],['vF0',a.vf0Pct,'%'],['ShdB',a.shdB,'dB'],['Shim',a.shimPct,'%'],['APQ',a.apqPct,'%'],['sAPQ',a.sapqPct,'%'],['vAm',a.vamPct,'%'],['NHR',a.nhr,'ratio'],['VTI',a.vti,'ratio'],['SPI',a.spi,'ratio'],['CPP*',a.cppPrototypeDb,'dB-like']];return card('Acoustic measurements','<div class="metrics">'+rows.map(r=>'<div class="metric"><span>'+r[0]+'</span><b>'+f(r[1])+'</b><small>'+r[2]+'</small></div>').join('')+'</div><p class="small">Duration '+f(a.durationSec)+' s • Voiced '+f(a.voicedPct)+'% • Clipping '+f(a.clippedPct)+'%</p><div class="chart">'+line(pts)+'</div><div class="notice">'+(a.quality.issues.length?a.quality.issues.join(' • '):'No basic capture-quality flags detected.')+'<br><small>*CPP is a research implementation and requires independent validation before clinical use.</small></div><div class="toolbar">'+btn('Save session','saveSession')+btn('Export JSON','exportJSON')+'</div>')}
 function line(vals){if(!vals.length)return'<div class="empty">No reliable pitch frames.</div>';const min=Math.min(...vals),max=Math.max(...vals);const pts=vals.map((v,i)=>i/(vals.length-1||1)*800+','+(210-(v-min)/(max-min||1)*190)).join(' ');return'<svg viewBox="0 0 800 220" preserveAspectRatio="none" style="width:100%;height:100%"><polyline fill="none" stroke="currentColor" stroke-width="3" points="'+pts+'"/></svg>'}
-async function startRecord(){try{state.voiceTask=$('#task')?.value||'vowel';state.stream=await navigator.mediaDevices.getUserMedia({audio:{channelCount:1,echoCancellation:false,noiseSuppression:false,autoGainControl:false}});const C=window.AudioContext||window.webkitAudioContext;state.audioContext=new C();const src=state.audioContext.createMediaStreamSource(state.stream);state.analyser=state.audioContext.createAnalyser();state.analyser.fftSize=2048;src.connect(state.analyser);state.recorder=new MediaRecorder(state.stream);state.chunks=[];state.recorder.ondataavailable=e=>e.data.size&&state.chunks.push(e.data);state.recorder.onstop=finishRecord;state.recorder.start(250);state.recording=true;state.seconds=0;state.timer=setInterval(updateCapture,1000);render()}catch(e){alert('Microphone access failed: '+e.message)}}
+async function startRecord(){
+  try{
+    if(!window.isSecureContext){throw new Error('Microphone access requires HTTPS. Open the GitHub Pages HTTPS address.')}
+    if(!navigator.mediaDevices?.getUserMedia){throw new Error('This browser does not provide microphone access. Use a current Chrome, Edge, or Firefox browser.')}
+    const C=window.AudioContext||window.webkitAudioContext;
+    if(!C)throw new Error('Web Audio API is not available in this browser.');
+    state.voiceTask=$('#task')?.value||'vowel';
+    state.notice='Requesting microphone permission…';
+    render();
+    state.stream=await navigator.mediaDevices.getUserMedia({audio:{channelCount:1,echoCancellation:false,noiseSuppression:false,autoGainControl:false}});
+    state.audioContext=new C();
+    if(state.audioContext.state==='suspended')await state.audioContext.resume();
+    const src=state.audioContext.createMediaStreamSource(state.stream);
+    state.analyser=state.audioContext.createAnalyser();
+    state.analyser.fftSize=2048;
+    src.connect(state.analyser);
+    const preferred=['audio/webm;codecs=opus','audio/webm','audio/mp4'];
+    const mime=typeof MediaRecorder!=='undefined'&&typeof MediaRecorder.isTypeSupported==='function'?preferred.find(x=>MediaRecorder.isTypeSupported(x))||'':'';
+    state.recorder=mime?new MediaRecorder(state.stream,{mimeType:mime}):new MediaRecorder(state.stream);
+    state.chunks=[];
+    state.recorder.ondataavailable=e=>{if(e.data?.size)state.chunks.push(e.data)};
+    state.recorder.onerror=e=>{state.notice='Recorder error: '+(e.error?.message||'Unable to record');cleanupRecording();state.recording=false;render()};
+    state.recorder.onstop=()=>finishRecord();
+    state.recorder.start(250);
+    state.recording=true;
+    state.seconds=0;
+    state.notice='Recording… speak naturally.';
+    state.timer=setInterval(updateCapture,1000);
+    render();
+  }catch(e){
+    cleanupRecording();
+    state.recording=false;
+    state.notice='Microphone unavailable: '+(e?.message||e);
+    render();
+  }
+}
+function cleanupRecording(){
+  clearInterval(state.timer);
+  state.timer=null;
+  for(const t of state.stream?.getTracks?.()||[])t.stop();
+  state.stream=null;
+  if(state.audioContext?.state!=='closed')state.audioContext?.close?.();
+  state.analyser=null;
+  state.recorder=null;
+}
 function updateCapture(){state.seconds++;const el=$('.timer');if(el)el.textContent=String(Math.floor(state.seconds/60)).padStart(2,'0')+':'+String(state.seconds%60).padStart(2,'0');if(!state.analyser)return;const x=new Uint8Array(state.analyser.fftSize);state.analyser.getByteTimeDomainData(x);let rms=0;for(const v of x){const q=(v-128)/128;rms+=q*q}rms=Math.sqrt(rms/x.length);const el2=$('#level');if(el2)el2.style.width=Math.min(100,Math.round(rms*180))+'%';const m=$('#captureMeta');if(m)m.textContent='Live input level: '+Math.round(rms*100)+'%'}
-async function finishRecord(){clearInterval(state.timer);for(const t of state.stream?.getTracks()||[])t.stop();const blob=new Blob(state.chunks,{type:state.recorder.mimeType||'audio/webm'});const ac=state.audioContext||new AudioContext();const buf=await ac.decodeAudioData(await blob.arrayBuffer());const ch=buf.getChannelData(0);state.analysis=analyzeVoice(new Float32Array(ch),buf.sampleRate);const task=state.voiceTask||'vowel';state.analysis.task=task;state.analysis.taskMetrics=window.SV_DSP.taskSpecificMetrics(new Float32Array(ch),buf.sampleRate,task);state.analysis.measurementStatus.gate=window.SV_DSP.measurementGate(state.analysis);state.analysis.recordingMeta={sampleRate:buf.sampleRate,channels:buf.numberOfChannels,duration:buf.duration,codec:blob.type};state.recording=false;render()}
+async function finishRecord(){
+  try{
+    clearInterval(state.timer);
+    state.timer=null;
+    for(const t of state.stream?.getTracks?.()||[])t.stop();
+    const mime=state.recorder?.mimeType||'audio/webm';
+    const blob=new Blob(state.chunks,{type:mime});
+    if(!blob.size)throw new Error('No audio data was captured. Check microphone permission and try again.');
+    const C=window.AudioContext||window.webkitAudioContext;
+    const ac=state.audioContext||new C();
+    const buf=await ac.decodeAudioData(await blob.arrayBuffer());
+    if(!buf.numberOfChannels||!buf.length)throw new Error('The recorded audio could not be decoded.');
+    const ch=new Float32Array(buf.getChannelData(0));
+    state.analysis=analyzeVoice(ch,buf.sampleRate);
+    const task=state.voiceTask||'vowel';
+    state.analysis.task=task;
+    state.analysis.taskMetrics=window.SV_DSP.taskSpecificMetrics(ch,buf.sampleRate,task);
+    state.analysis.measurementStatus.gate=window.SV_DSP.measurementGate(state.analysis);
+    state.analysis.recordingMeta={sampleRate:buf.sampleRate,channels:buf.numberOfChannels,duration:buf.duration,codec:blob.type};
+    state.recording=false;
+    state.stream=null;
+    state.recorder=null;
+    state.notice='Recording analyzed successfully.';
+    render();
+  }catch(e){
+    state.recording=false;
+    cleanupRecording();
+    state.notice='Recording analysis failed: '+(e?.message||e);
+    render();
+  }
+}
 function saveSession(){if(!state.analysis)return;const id='PC-'+Date.now().toString(36).toUpperCase();const s={id,patientId:state.patient?.id||'P-001',task:state.voiceTask||'vowel',createdAt:new Date().toISOString(),status:'completed',recordingMeta:state.analysis.recordingMeta,m:state.analysis,quality:state.analysis.quality};state.sessions.unshift(s);store.set('sessions',state.sessions);state.notice='Session saved locally';render()}
 function svgWaveform(samples){if(!samples||!samples.length)return'<div class="empty">Waveform unavailable.</div>';const n=Math.min(samples.length,2400),step=Math.max(1,Math.floor(samples.length/n)),pts=[];for(let i=0;i<n;i+=1){let sum=0,c=0;for(let j=i*step;j<Math.min(samples.length,(i+1)*step);j++){sum+=samples[j];c++}const y=110-(sum/(c||1))*90;pts.push((i/(n-1||1)*800)+','+Math.max(10,Math.min(210,y)))}return'<svg viewBox="0 0 800 220" preserveAspectRatio="none" style="width:100%;height:100%"><polyline fill="none" stroke="currentColor" stroke-width="1.5" points="'+pts.join(' ')+'"/></svg>'}
 function reportGraphs(s){const pts=(s.m.pitchTrack||[]).filter(x=>x.f0).map(x=>x.f0);return card('Signal visualization','<h3>F0 contour</h3><div class="chart">'+line(pts)+'</div><h3>Waveform</h3><div class="chart" id="reportWaveform"><div class="empty">Waveform is retained only for the current browser session unless exported by the user.</div></div>')}
@@ -209,7 +283,7 @@ function wire(){
   document.querySelectorAll('[data-pid]').forEach(x=>x.onclick=()=>{state.patient=state.patients.find(p=>p.id===x.dataset.pid);render()});
   on('addP','click',()=>{const name=prompt('Patient display name');if(!name)return;const id='P-'+String(state.patients.length+1).padStart(3,'0');state.patients.push({id,name,age:'',sex:''});store.set('patients',state.patients);render()});
   document.querySelectorAll('[data-task]').forEach(x=>x.onclick=()=>{state.page='Voice Lab';render();setTimeout(()=>{const t=$('#task');if(t)t.value=x.dataset.task},0)});
-  on('record','click',startRecord);on('stop','click',()=>state.recorder?.stop());on('reset','click',()=>{state.analysis=null;render()});on('saveSession','click',saveSession);on('exportJSON','click',()=>download('phonacore-analysis.json',state.analysis));
+  on('record','click',startRecord);on('stop','click',()=>{if(state.recorder&&state.recorder.state!=='inactive')state.recorder.stop();else{cleanupRecording();state.recording=false;state.notice='No active recording.';render()}});on('reset','click',()=>{state.analysis=null;render()});on('saveSession','click',saveSession);on('exportJSON','click',()=>download('phonacore-analysis.json',state.analysis));
   document.querySelectorAll('[data-report]').forEach(b=>b.onclick=()=>download('phonacore-report.json',state.sessions.find(s=>s.id===b.dataset.report)));
   on('newTele','click',()=>{state.tele={id:'TEL-'+Date.now().toString(36),status:'created',consent:false};render()});
   on('consent','click',()=>{if(!state.tele)return;state.tele.consent=true;state.tele.status='ready';render()});
