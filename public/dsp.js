@@ -12,6 +12,47 @@ function autocorrelationF0(x,sr,minHz=70,maxHz=400){if(!x.length)return null;con
 function pitchTrack(samples,sr){return frames(samples,sr).map((x,i)=>({time:i*.01,f0:autocorrelationF0(x,sr),rms:rms(x)}))}
 
 /**
+ * Period-level research extraction.
+ * This creates one record per detected pitch period using a normalized
+ * autocorrelation estimate for each short analysis frame, then refines
+ * the period to the nearest local waveform peak pair. It is a
+ * research-oriented estimator, not a claim of MDVP algorithm equivalence.
+ */
+function extractPeriods(samples,sr,{minHz=70,maxHz=400,frameMs=40,hopMs=10}={}){
+  const out=[];
+  const fs=Math.max(32,Math.round(sr*frameMs/1000));
+  const hop=Math.max(1,Math.round(sr*hopMs/1000));
+  for(let start=0;start+fs<=samples.length;start+=hop){
+    const frame=samples.slice(start,start+fs);
+    const clean=removeDC(frame);
+    const f0=autocorrelationF0(clean,sr,minHz,maxHz);
+    if(!Number.isFinite(f0)||f0<=0)continue;
+    const period=sr/f0;
+    const center=start+Math.floor(fs/2);
+    const half=Math.max(2,Math.round(period/2));
+    const searchStart=Math.max(1,center-half);
+    const searchEnd=Math.min(samples.length-2,center+half);
+    let peakIndex=searchStart,peakValue=-Infinity;
+    for(let i=searchStart;i<=searchEnd;i++){if(clean[i-(start)]>peakValue){peakValue=clean[i-start];peakIndex=i}}
+    const nextStart=Math.min(samples.length-1,peakIndex+Math.max(1,Math.round(period*.75)));
+    const nextEnd=Math.min(samples.length-2,peakIndex+Math.round(period*1.25));
+    let next=nextStart,nextValue=-Infinity;
+    for(let i=nextStart;i<=nextEnd;i++){const v=samples[i];if(v>nextValue){nextValue=v;next=i}}
+    const T=(next-peakIndex)/sr;
+    if(T<=0)continue;
+    const A=Math.max(1e-12,nextValue-Math.min(...samples.slice(peakIndex,Math.min(samples.length,peakIndex+Math.max(2,Math.round(period))))));
+    out.push({index:out.length,time:peakIndex/sr,startSample:peakIndex,endSample:next,periodSec:T,f0:1/T,peakToPeak:A,confidence:f0?Math.max(0,Math.min(1,(f0>=minHz&&f0<=maxHz)?1:0)):0});
+  }
+  return out;
+}
+
+function periodSequenceFeatures(periods){
+  const valid=periods.filter(p=>Number.isFinite(p.periodSec)&&p.periodSec>0&&Number.isFinite(p.f0)&&p.f0>0&&Number.isFinite(p.peakToPeak)&&p.peakToPeak>0);
+  if(valid.length<3)return {validPeriods:valid.length,periods:[],f0:[],amplitude:[]};
+  return {validPeriods:valid.length,periods:valid.map(p=>p.periodSec),f0:valid.map(p=>p.f0),amplitude:valid.map(p=>p.peakToPeak),records:valid};
+}
+
+/**
  * MDVP-oriented perturbation helper.
  * For odd windows (3/5/11/55), compare each center value with the
  * moving-average value across the full window, then average the
@@ -91,8 +132,8 @@ function spectralCepstrumCPP(samples,sr){
 
 function analyzeVoice(samples,sr){
   const clean=normalize(removeDC(samples)),duration=samples.length/sr,p=peak(samples),r=rms(samples);
-  const track=pitchTrack(clean,sr),voiced=track.filter(x=>x.f0),f0s=voiced.map(x=>x.f0);
-  const pf=periodFeatures(track),af=amplitudeFeatures(track),noise=spectralNoise(clean,sr,mean(f0s)),cpp=spectralCepstrumCPP(clean,sr);
+  const track=pitchTrack(clean,sr),periods=extractPeriods(clean,sr),seq=periodSequenceFeatures(periods),voiced=track.filter(x=>x.f0),f0s=voiced.map(x=>x.f0);
+  const pf=periodFeatures(track),periodLevel=periodSequenceFeatures(periods),periodPf=periodLevel.validPeriods>=3?periodFeatures(periodLevel.records.map(p=>({f0:p.f0,rms:p.peakToPeak}))):pf,periodAf=periodLevel.validPeriods>=3?amplitudeFeatures(periodLevel.records.map(p=>({f0:p.f0,rms:p.peakToPeak}))):af,af=amplitudeFeatures(track),noise=spectralNoise(clean,sr,mean(f0s)),cpp=spectralCepstrumCPP(clean,sr);
   const clipped=samples.length?samples.filter(x=>Math.abs(x)>=.99).length/samples.length*100:0;
   const voicedPct=track.length?voiced.length/track.length*100:0;
   const quality=Math.max(0,Math.min(100,Math.round(100-0.5*clipped-0.35*Math.max(0,40-voicedPct))));
@@ -100,13 +141,13 @@ function analyzeVoice(samples,sr){
   return {
     sampleRate:sr,durationSec:duration,f0Mean,f0Median:median(f0s),f0Min,f0Max,f0Sd:sd(f0s),
     pfrSemitones:f0Min&&f0Max?12*Math.log2(f0Max/f0Min):null,
-    jitaUs:pf.jitaUs,jitterLocalPct:pf.jittPct,jittPct:pf.jittPct,rapPct:pf.rapPct,ppqPct:pf.ppqPct,
-    sppqPct:pf.sppqPct,vf0Pct:pf.vf0Pct,t0Ms:pf.t0Ms,
-    shimmerLocalPct:af.shimPct,shimPct:af.shimPct,shdB:af.shdB,apqPct:af.apqPct,sapqPct:af.sapqPct,vamPct:af.vamPct,
+    jitaUs:periodPf.jitaUs,jitterLocalPct:periodPf.jittPct,jittPct:periodPf.jittPct,rapPct:periodPf.rapPct,ppqPct:periodPf.ppqPct,
+    sppqPct:periodPf.sppqPct,vf0Pct:periodPf.vf0Pct,t0Ms:periodPf.t0Ms,
+    shimmerLocalPct:periodAf.shimPct,shimPct:periodAf.shimPct,shdB:periodAf.shdB,apqPct:periodAf.apqPct,sapqPct:periodAf.sapqPct,vamPct:periodAf.vamPct,
     nhr:noise.nhr,vti:noise.vti,spi:noise.spi,cppPrototypeDb:cpp,voicedPct,clippedPct:clipped,
     rmsDb:20*Math.log10(Math.max(r,1e-9)),peakDb:20*Math.log10(Math.max(p,1e-9)),
     quality:{score:quality,label:quality>=80?'Good':quality>=60?'Review':'Poor',issues:[...(clipped>1?['Clipping detected']:[]),...(voicedPct<30?['Low voiced-frame proportion']:[]),...(duration<2?['Short recording']:[])]},
-    pitchTrack:track,
+    pitchTrack:track,periods,periodLevel,
     measurementStatus:{
       core:'prototype',
       mdvpComparable:['F0','Fhi','Flo','STD','Jita','Jitt','RAP','PPQ','sPPQ','vF0','ShdB','Shim','APQ','sAPQ','vAm','NHR'],
@@ -116,5 +157,5 @@ function analyzeVoice(samples,sr){
 }
 function stats(a){const x=a.filter(Number.isFinite);return{n:x.length,mean:mean(x),median:median(x),sd:sd(x),min:x.length?Math.min(...x):NaN,max:x.length?Math.max(...x):NaN}}
 
-window.SV_DSP={mean,median,sd,rms,peak,removeDC,normalize,hann,frames,autocorrelationF0,pitchTrack,mdvpPerturbation,periodFeatures,amplitudeFeatures,analyzeVoice,stats};
+window.SV_DSP={mean,median,sd,rms,peak,removeDC,normalize,hann,frames,autocorrelationF0,pitchTrack,extractPeriods,periodSequenceFeatures,mdvpPerturbation,periodFeatures,amplitudeFeatures,analyzeVoice,stats};
 })();
