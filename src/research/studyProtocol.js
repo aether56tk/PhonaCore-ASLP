@@ -10,7 +10,12 @@ export function protocolCheck(m={}){
   if(!m.participantCode)issues.push('Missing participant_code');
   if(m.channels!==null&&m.channels!==1)issues.push('Recording is not mono');
   if(Number.isFinite(m.durationSec)&&(m.durationSec<STANDARD_PROTOCOL.durationSec.min||m.durationSec>STANDARD_PROTOCOL.durationSec.max))issues.push('Duration outside protocol range');
-  if(m.preprocessing&&Object.values(STANDARD_PROTOCOL.preprocessing).some((v,k)=>false)){}
+  if(Number.isFinite(m.sampleRateHz)&&!STANDARD_PROTOCOL.sampleRateHz.includes(m.sampleRateHz))issues.push('Sample rate is outside the standard protocol options');
+  if(m.preprocessing){
+    for(const [key,expected] of Object.entries(STANDARD_PROTOCOL.preprocessing)){
+      if(m.preprocessing[key]!==undefined&&m.preprocessing[key]!==expected)issues.push('Browser preprocessing mismatch: '+key);
+    }
+  }
   return {valid:issues.length===0,issues};
 }
 
