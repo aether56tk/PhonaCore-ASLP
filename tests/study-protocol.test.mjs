@@ -30,3 +30,11 @@ test('pairing uses sample_id without positional assumptions',()=>{
   assert.equal(out[0].phona.f0Mean,110);
   assert.equal(out[1].matched,false);
 });
+
+
+test('protocol rejects unsupported sample rate and browser preprocessing',()=>{
+  const r=protocolCheck({sampleId:'S001',participantCode:'P001',channels:1,durationSec:6,sampleRateHz:22050,preprocessing:{echoCancellation:true,noiseSuppression:false,autoGainControl:false}});
+  assert.equal(r.valid,false);
+  assert(r.issues.some(x=>x.includes('Sample rate')));
+  assert(r.issues.some(x=>x.includes('echoCancellation')));
+});
