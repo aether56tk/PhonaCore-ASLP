@@ -1,0 +1,6 @@
+(()=>{const n=v=>{const x=Number(v);return Number.isFinite(x)?x:null};const clean=p=>p.map(x=>Array.isArray(x)?x:[x.reference,x.phonacore]).map(x=>[n(x[0]),n(x[1])]).filter(x=>x[0]!==null&&x[1]!==null);
+function pearson(p){p=clean(p);if(p.length<2)return null;const N=p.length,a=p.map(x=>x[0]),b=p.map(x=>x[1]),ma=a.reduce((s,x)=>s+x,0)/N,mb=b.reduce((s,x)=>s+x,0)/N,sa=Math.sqrt(a.reduce((s,x)=>s+(x-ma)**2,0)),sb=Math.sqrt(b.reduce((s,x)=>s+(x-mb)**2,0));return sa&&sb?a.reduce((s,x,i)=>s+(x-ma)*(b[i]-mb),0)/(sa*sb):null}
+function ccc(p){p=clean(p);if(p.length<2)return null;const N=p.length,a=p.map(x=>x[0]),b=p.map(x=>x[1]),ma=a.reduce((s,x)=>s+x,0)/N,mb=b.reduce((s,x)=>s+x,0)/N,va=a.reduce((s,x)=>s+(x-ma)**2,0)/N,vb=b.reduce((s,x)=>s+(x-mb)**2,0)/N,cov=a.reduce((s,x,i)=>s+(x-ma)*(b[i]-mb),0)/N;return 2*cov/(va+vb+(ma-mb)**2)}
+function criterionValidity(p){p=clean(p);const N=p.length;if(!N)return{n:0,pearson:null,ccc:null,bias:null,mae:null,rmse:null,loa95:null};const d=p.map(x=>x[1]-x[0]),bias=d.reduce((s,x)=>s+x,0)/N,mae=d.reduce((s,x)=>s+Math.abs(x),0)/N,rmse=Math.sqrt(d.reduce((s,x)=>s+x*x,0)/N),sd=N>1?Math.sqrt(d.reduce((s,x)=>s+(x-bias)**2,0)/(N-1)):0;return{n:N,pearson:pearson(p),ccc:ccc(p),bias,mae,rmse,loa95:[bias-1.96*sd,bias+1.96*sd]}}
+window.PC_VALIDITY={criterionValidity};
+})();
