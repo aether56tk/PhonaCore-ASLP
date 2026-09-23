@@ -1,0 +1,3 @@
+export const DEVICE_TESTS=["recording","sample-rate","channel-count","aec-off","ns-off","agc-off","analysis","export"];
+export function deviceQualificationResult(results={}){const missing=DEVICE_TESTS.filter(k=>results[k]!==true);return {qualified:missing.length===0,missing,results}}
+export function preprocessingExperiment(raw,processed){const keys=["f0Mean","jitter","shimmer","cpp"],deltas={};for(const k of keys){const a=Number(raw?.[k]),b=Number(processed?.[k]);if(Number.isFinite(a)&&Number.isFinite(b))deltas[k]={absolute:b-a,percent:a!==0?100*(b-a)/Math.abs(a):null}}return {keys,deltas}}
