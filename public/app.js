@@ -44,7 +44,11 @@ async function startRecord(){
     state.recorder.onstart=()=>{state.notice='Recording started. Speak naturally.'};
     state.chunks=[];
     state.recorder.ondataavailable=e=>{if(e.data?.size)state.chunks.push(e.data)};
-    state.recorder.onerror=e=>{state.notice='Recorder error: '+(e.error?.message||'Unable to record');cleanupRecording();state.recording=false;render()};
+    state.recorder.onerror=e=>{
+      const n=e?.error?.name||'UnknownError',m=e?.error?.message||'Unable to record';
+      state.notice='MediaRecorder error ('+n+'): '+m;
+      cleanupRecording();state.recording=false;render()
+    };
     state.recorder.onstop=()=>finishRecord();
     state.recorder.start(250);
     state.recording=true;
@@ -72,7 +76,13 @@ async function startRecord(){
   }
 }
 window.__PhonaCoreRecord=()=>startRecord();
-window.__PhonaCoreStop=()=>{if(state.recorder&&state.recorder.state!=='inactive')state.recorder.stop();else{cleanupRecording();state.recording=false;state.notice='No active recording.';render()}};
+window.__PhonaCoreStop=()=>{
+  const r=state.recorder;
+  if(r&&r.state!=='inactive'){
+    try{if(typeof r.requestData==='function')r.requestData()}catch(_){}
+    setTimeout(()=>{try{if(r.state!=='inactive')r.stop()}catch(e){state.notice='Recorder stop failed: '+(e.message||e);cleanupRecording();state.recording=false;render()}},120);
+  }else{cleanupRecording();state.recording=false;state.notice='No active recording.';render()}
+};
 function handleAudioFallback(file){if(!file)return;const reader=new FileReader();reader.onload=async()=>{try{const C=window.AudioContext||window.webkitAudioContext;if(!C)throw new Error('Web Audio API unavailable.');const ac=new C();const buf=await ac.decodeAudioData(reader.result);const ch=new Float32Array(buf.getChannelData(0));const task=state.voiceTask||'vowel';state.analysis=analyzeVoice(ch,buf.sampleRate);state.analysis.task=task;state.analysis.taskMetrics=window.SV_DSP.taskSpecificMetrics(ch,buf.sampleRate,task);state.analysis.measurementStatus.gate=window.SV_DSP.measurementGate(state.analysis);state.analysis.recordingMeta={sampleRate:buf.sampleRate,channels:buf.numberOfChannels,duration:buf.duration,source:'mobile audio capture/file'};await ac.close().catch(()=>{});state.recording=false;state.notice='Audio captured and analyzed.';render()}catch(e){state.recording=false;state.notice='Audio analysis failed: '+(e.message||e);render()}};reader.readAsArrayBuffer(file)}
 function offerAudioFallback(){const input=document.createElement('input');input.type='file';input.accept='audio/*';input.setAttribute('capture','user');input.style.display='none';input.onchange=()=>handleAudioFallback(input.files?.[0]);document.body.appendChild(input);input.click();setTimeout(()=>input.remove(),60000)}
 function cleanupRecording(){
@@ -92,7 +102,7 @@ async function finishRecord(){
     for(const t of state.stream?.getTracks?.()||[])t.stop();
     const mime=state.recorder?.mimeType||'audio/webm';
     const blob=new Blob(state.chunks,{type:mime});
-    if(!blob.size)throw new Error('No audio data was captured. Check microphone permission and try again.');
+    if(!blob.size)throw new Error('No audio data was emitted by MediaRecorder. The microphone permission was granted, but this browser did not provide a recording chunk.');
     const C=window.AudioContext||window.webkitAudioContext;
     const ac=state.audioContext||new C();
     const buf=await ac.decodeAudioData(await blob.arrayBuffer());
