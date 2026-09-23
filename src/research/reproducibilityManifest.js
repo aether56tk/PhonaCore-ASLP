@@ -1,0 +1,3 @@
+export const MANIFEST_VERSION="SVX-MANIFEST-1.0";
+export function createManifest({protocolVersion,appVersion,referenceTool,parameters,tasks,analysisSettings}={}){return {schema:MANIFEST_VERSION,createdAt:new Date().toISOString(),protocolVersion,appVersion,referenceTool,parameters,tasks,analysisSettings}}
+export function stableJSON(value){return JSON.stringify(value,Object.keys(value||{}).sort(),2)}
