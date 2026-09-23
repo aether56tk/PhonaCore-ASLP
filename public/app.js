@@ -23,8 +23,15 @@ async function startRecord(){
     const C=window.AudioContext||window.webkitAudioContext;
     if(!C)throw new Error('Web Audio API is not available in this browser.');
     state.voiceTask=$('#task')?.value||'vowel';
+    let permission='unknown';
+    try{if(navigator.permissions?.query){permission=(await navigator.permissions.query({name:'microphone'})).state;}}catch(_){}
+    if(permission==='denied'){
+      throw new Error('Microphone permission is blocked for this site. In Chrome tap the lock/tune icon beside the address → Permissions → Microphone → Allow, then reload the page.');
+    }
     state.notice='Requesting microphone permission…';
-    state.stream=await navigator.mediaDevices.getUserMedia({audio:{channelCount:1,echoCancellation:false,noiseSuppression:false,autoGainControl:false}});
+    // Start with the least restrictive request. Some mobile browsers reject advanced
+    // audio constraints even though microphone access itself is available.
+    state.stream=await navigator.mediaDevices.getUserMedia({audio:true});
     state.audioContext=new C();
     if(state.audioContext.state==='suspended')await state.audioContext.resume();
     const src=state.audioContext.createMediaStreamSource(state.stream);
@@ -48,9 +55,20 @@ async function startRecord(){
   }catch(e){
     cleanupRecording();
     state.recording=false;
-    state.notice='Microphone unavailable — opening mobile audio capture…';
+    const name=e?.name||'UnknownError';
+    const detail=name==='NotAllowedError'
+      ?'Microphone permission was denied or blocked. Open this site in Chrome → site settings/lock icon → Microphone → Allow, then reload.'
+      :name==='NotFoundError'
+      ?'No microphone was detected by the browser. Check Android microphone access and that another app is not exclusively using it.'
+      :name==='NotReadableError'
+      ?'The microphone exists but cannot be read. Close other apps using the microphone, then retry.'
+      :name==='SecurityError'
+      ?'The browser blocked microphone access for this page. Use the HTTPS GitHub Pages address and allow Microphone.'
+      :name==='OverconstrainedError'
+      ?'The browser rejected an audio constraint. PhonaCore has switched to a basic microphone request.'
+      :'Microphone error ('+name+'): '+(e?.message||e);
+    state.notice=detail;
     render();
-    setTimeout(offerAudioFallback,0);
   }
 }
 window.__PhonaCoreRecord=()=>startRecord();
