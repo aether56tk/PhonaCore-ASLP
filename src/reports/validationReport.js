@@ -1,0 +1,3 @@
+import {summarizeParameter} from "../validation/metrics.js";
+export function generateValidationReport(rows=[]){const parameters=["f0","jitter","shimmer","cpp"],out={schema:"SVX-VALIDATION-1.0",generatedAt:new Date().toISOString(),n:rows.length,parameters:{}};for(const p of parameters){const ref=[],svx=[];for(const r of rows){const a=Number(r?.reference?.[p]),b=Number(r?.securavox?.[p]);if(Number.isFinite(a)&&Number.isFinite(b)){ref.push(a);svx.push(b)}}out.parameters[p]=summarizeParameter(ref,svx)}return out}
+export function reportToJSON(report){return JSON.stringify(report,null,2)}
