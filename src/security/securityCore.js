@@ -1,0 +1,4 @@
+export const ROLES={ADMIN:["read","write","export","delete","manage-users"],CLINICIAN:["read","write","export"],RESEARCHER:["read","write","export-research"],PATIENT:["read-own"]};
+export function can(role,permission){return !!ROLES[role]?.includes(permission)}
+export function auditEvent(actor,action,resource,metadata={}){return {id:crypto.randomUUID(),at:new Date().toISOString(),actor,action,resource,metadata}}
+export function sanitizeAuditMetadata(meta={}){const blocked=["password","token","secret","authorization","accessToken"],out={};for(const [k,v] of Object.entries(meta)){if(!blocked.includes(k))out[k]=v}return out}
