@@ -46,6 +46,19 @@ Primary reference target: Multi-Dimensional Voice Program (MDVP), Kay Elemetrics
 7. NHR/VTI/SPI require exact algorithm/settings matching before they can be treated as direct MDVP-equivalent outputs.
 8. Agreement statistics describe measurement agreement; they do not establish clinical equivalence or diagnostic validity.
 
+## Evidence extracted from uploaded MDVP study
+
+The uploaded Nicastro et al. (2004) study used MDVP software model 5105 version 2.3 with a Kay CSL 4300B, Shure SM48 microphone at 15 cm and 45 degrees, 50 kHz sampling, at least 6 seconds of sustained /a/, with the central 3 seconds analysed. The study maintained background noise below 30 dB, used 55–65 dB as the acceptable vocal intensity range, and set acquisition-channel saturation at 6/9. These are study-specific conditions and are not automatically the PhonaCore final protocol. fileciteturn46file0L156-L180
+
+The uploaded study explicitly defines the following amplitude measures:
+- **ShdB:** mean absolute peak-to-peak amplitude variability from one period to the next (short-term cycle-to-cycle irregularity).
+- **Shim:** mean relative peak-to-peak amplitude variability between periods.
+- **vAm:** mean relative amplitude variability over 11 periods using a one-step peak-to-peak comparison.
+- **APQ:** mean relative amplitude variability over a default 55-period window using one-step peak-to-peak comparison.
+- **SAPQ:** relative variability of the peak-to-peak amplitude standard deviation compared with the average peak-to-peak amplitude. fileciteturn46file0L181-L192
+
+The same study reports normative reference values for these five measures, including overall means of ShdB 0.233 dB, Shim 2.538%, APQ 2.101%, SAPQ 3.212%, and vAm 6.800% across its 35 euphonic adults. These values are **not validation targets** for PhonaCore; they are descriptive values from that specific population/protocol. fileciteturn46file0L243-L250
+
 ## Current implementation status
 
 - F0/Fhi/Flo/STD/T0: prototype
