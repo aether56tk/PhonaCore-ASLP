@@ -50,6 +50,7 @@ async function startRecord(){
     state.recording=false;
     state.notice='Microphone unavailable — opening mobile audio capture…';
     render();
+    setTimeout(offerAudioFallback,0);
   }
 }
 window.__PhonaCoreRecord=()=>startRecord();
