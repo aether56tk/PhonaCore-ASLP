@@ -1,5 +1,5 @@
 /* PhonaCore-ASLP build: 2026-09-23-fix-algorithm-validation */
-window.__PHONACORE_BUILD='2026-09-23-fix-algorithm-validation';
+window.__PHONACORE_BUILD='2026-09-23-final-qa1';
 const {analyzeVoice,stats,mean,sd}=window.SV_DSP;
 const $=s=>document.querySelector(s), store={get(k,d){try{return JSON.parse(localStorage.getItem('sv_'+k))??d}catch{return d}},set(k,v){try{localStorage.setItem('sv_'+k,JSON.stringify(v));return true}catch(e){return false}}};
 let state={page:'Dashboard',theme:store.get('theme','night'),patient:null,patients:store.get('patients',[]),sessions:store.get('sessions',[]),recording:false,stream:null,recorder:null,chunks:[],pcmChunks:[],pcmProcessor:null,timer:null,seconds:0,analysis:null,tele:null,datasets:store.get('datasets',[]),experiments:store.get('experiments',[])};
@@ -8,6 +8,17 @@ const nav=['Dashboard','Patients','Clinical','Assessments','Voice Lab','Reports'
 function render(){document.body.dataset.theme=state.theme;document.body.innerHTML=`<div class="layout"><aside class="side"><div class="brand">PhonaCore<small>ASLP • FULL BUILD</small></div>${nav.map(n=>`<button class="nav ${state.page===n?'active':''}" data-page="${n}">${n}</button>`).join('')}</aside><main class="main"><div class="top"><span>PhonaCore-ASLP / ${state.page}</span><div class="topActions"><button class="btn primary" id="globalNewAssessment">＋ New assessment</button><button class="btn" id="themeToggle">${state.theme==='night'?'☀ Daylight':'☾ Night'}</button><button class="btn" id="clear">Clear data</button></div></div><section class="content">${page()}</section></main>${state.notice?`<div class="toast">${state.notice}</div>`:''}</div>`;document.querySelectorAll('[data-page]').forEach(b=>b.onclick=()=>{state.page=b.dataset.page;render()});$('#clear').onclick=()=>{if(confirm('Clear all local PhonaCore data?')){for(const k of ['sessions','patients','datasets','experiments'])localStorage.removeItem('sv_'+k);location.reload()}};wire()}
 function head(t,s,button=''){return`<div class="head"><h1>${t}</h1>${button}</div>`}function card(t,x){return`<div class="card"><div class="cardhead"><h2>${t}</h2></div>${x}</div>`}function btn(t,id=''){const action=id==='record'?' onclick="window.__PhonaCoreRecord&&window.__PhonaCoreRecord()"':id==='stop'?' onclick="window.__PhonaCoreStop&&window.__PhonaCoreStop()"':'';return`<button type="button" class="btn ${id?'primary':''}" id="${id}"${action}>${t}</button>`}
 function page(){switch(state.page){case'Validation 2.0':return validationEngine();case'Reliability Lab':return reliabilityLab();case'Validity Lab':return validityLab();case'Algorithm Validation':return algorithmValidation();case'Study Manager & Final QA':return studyManager();case'Batch Research':return batchResearch();case'Study Protocol':return studyProtocol();case'Patients':return patients();case'Clinical':return clinical();case'Assessments':return assessments();case'Voice Lab':return voice();case'Reports':return reports();case'Tele-Assessment':return tele();case'Research Lab':return research();case'Datasets':return datasets();case'Statistics':return statistics();case'Security':return security();case'Settings':return settings();default:return dashboard()}}
+function startNewAssessment(){
+  if(state.recording){state.recording=false;cleanupRecording()}
+  if(state.analysisWorker){try{state.analysisWorker.terminate()}catch(_){ }state.analysisWorker=null}
+  state.analysis=null;
+  state.seconds=0;
+  state.voiceTask='vowel';
+  if(!state.patient)state.patient=state.patients[0];
+  state.page='Voice Lab';
+  state.notice='New assessment ready.';
+  render();
+}
 function dashboard(){const done=state.sessions.filter(s=>s.status==='completed'),q=done.map(s=>s.quality?.score).filter(Number.isFinite);return head('Research Studio','',btn('＋ New assessment','newA'))+`<div class="grid"><div class="stat"><span>Completed sessions</span><b>${done.length}</b><small>local</small></div><div class="stat"><span>Mean quality</span><b>${q.length?Math.round(mean(q)):'—'}</b><small>/100</small></div><div class="stat"><span>Patients</span><b>${state.patients.length}</b><small>local registry</small></div><div class="stat"><span>Research samples</span><b>${state.sessions.length}</b><small>session records</small></div></div>`}
 function patients(){return head('Patients','Minimum-necessary local patient registry.',btn('＋ Add patient','addP'))+`<div class="patients">${state.patients.map(p=>`<button class="patient ${state.patient?.id===p.id?'selected':''}" data-pid="${p.id}"><b>${p.name}</b><span>${p.id}</span><small>${p.age} yrs • ${p.sex}</small></button>`).join('')}</div>`+card('Selected patient',state.patient?`<b>${state.patient.name}</b><p class="small">${state.patient.id} • ${state.patient.age} • ${state.patient.sex}</p><button class="btn primary" id="patientAssess">Start assessment</button>`:'Select a patient.')}
 function clinical(){const p=state.patient||state.patients[0];const h=store.get('history_'+(p?.id||'P-001'),{});return head('Clinical Assessment','Structured case history, symptoms, occupational voice load and clinician observations.')+card('Patient',p?`<b>${p.name}</b><p class="small">${p.id} • ${p.age||'—'} years • ${p.sex||'—'}</p>`:'Select a patient first.')+card('Case history',`<div class="formgrid"><label>Primary voice concern<textarea id="chConcern">${h.concern||''}</textarea></label><label>Onset / duration<textarea id="chOnset">${h.onset||''}</textarea></label><label>Voice-use occupation<input id="chOcc" value="${h.occupation||''}"></label><label>Daily voice load<select id="chLoad"><option>Low</option><option>Moderate</option><option>High</option><option>Very high</option></select></label><label>Relevant medical / ENT history<textarea id="chMedical">${h.medical||''}</textarea></label><label>Previous voice treatment<textarea id="chTreatment">${h.treatment||''}</textarea></label></div>`)+card('Patient-reported symptoms',`<div class="grid2">${['Hoarseness','Roughness','Breathiness','Vocal fatigue','Throat discomfort','Difficulty projecting','Frequent throat clearing','Voice breaks','Pitch change','Pain while speaking'].map(x=>`<label class="patient"><input type="checkbox" class="caseSym" value="${x}" ${(h.symptoms||[]).includes(x)?'checked':''}> ${x}</label>`).join('')}</div>`)+card('Clinician assessment',`<div class="formgrid"><label>Perceptual voice quality<textarea id="chPerceptual">${h.perceptual||''}</textarea></label><label>Resonance / phonation observations<textarea id="chResonance">${h.resonance||''}</textarea></label><label>Clinical impression<textarea id="chImpression">${h.impression||''}</textarea></label><label>Follow-up plan<textarea id="chFollow">${h.follow||''}</textarea></label></div><div class="toolbar"><button class="btn primary" id="saveClinical">Save clinical assessment</button></div><div class="notice">Clinical fields are clinician-entered observations. PhonaCore does not automatically diagnose a voice disorder.</div>`)}
@@ -88,20 +99,45 @@ async function finishPCM(){
     const pcm=new Float32Array(total);
     let at=0;for(const x of chunks){pcm.set(x,at);at+=x.length}
     const sr=state.audioContext?.sampleRate||44100;
-    const C=window.AudioContext||window.webkitAudioContext;
-    const ac=state.audioContext||new C();
-    const buf=ac.createBuffer(1,pcm.length,sr);
-    buf.copyToChannel(pcm,0);
-    const ch=new Float32Array(buf.getChannelData(0));
     const task=state.voiceTask||'vowel';
-    state.analysis=analyzeVoice(ch,sr);
-    state.analysis.task=task;
-    state.analysis.taskMetrics=window.SV_DSP.taskSpecificMetrics(ch,sr,task);
-    state.analysis.measurementStatus.gate=window.SV_DSP.measurementGate(state.analysis);
-    state.analysis.recordingMeta={sampleRate:sr,channels:1,duration:pcm.length/sr,codec:'PCM/Web Audio'};
+    const duration=pcm.length/sr;
+    // Release the microphone immediately, then perform the CPU-heavy acoustic analysis off the UI thread.
     cleanupRecording();
-    state.notice='Recording analyzed successfully.';
+    state.recording=false;
+    state.analysis=null;
+    state.notice='Recording stopped. Analyzing audio…';
     render();
+    if(typeof Worker==='undefined'){
+      setTimeout(()=>{
+        try{
+          const a=analyzeVoice(pcm,sr);
+          a.task=task;
+          a.taskMetrics=window.SV_DSP.taskSpecificMetrics(pcm,sr,task);
+          a.measurementStatus.gate=window.SV_DSP.measurementGate(a);
+          a.recordingMeta={sampleRate:sr,channels:1,duration,codec:'PCM/Web Audio'};
+          state.analysis=a;state.notice='Recording analyzed successfully.';render();
+        }catch(e){state.notice='Recording analysis failed: '+(e?.message||e);render()}
+      },0);
+      return;
+    }
+    const worker=new Worker('./analysis-worker.js?build=20260923-qa1');
+    state.analysisWorker=worker;
+    worker.onmessage=e=>{
+      const msg=e.data||{};
+      worker.terminate();
+      if(state.analysisWorker===worker)state.analysisWorker=null;
+      if(!msg.ok){state.notice='Recording analysis failed: '+(msg.error||'Unknown worker error');render();return}
+      state.analysis=msg.analysis;
+      state.notice='Recording analyzed successfully.';
+      render();
+    };
+    worker.onerror=e=>{
+      worker.terminate();
+      if(state.analysisWorker===worker)state.analysisWorker=null;
+      state.notice='Recording analysis failed: '+(e.message||'Analysis worker error');
+      render();
+    };
+    worker.postMessage({buffer:pcm.buffer,sr,task,duration},[pcm.buffer]);
   }catch(e){
     cleanupRecording();
     state.recording=false;
@@ -280,7 +316,7 @@ function runReliabilityAnalysis(){
 function runValidityAnalysis(){const file=$('#validityFile')?.files?.[0];if(!file){$('#validityStatus').textContent='Select a paired CSV file.';return}file.text().then(t=>{try{const rows=parseCsv(t),p=rows.map(r=>({reference:r.reference,phonacore:r.phonacore})),report=PC_VALIDITY.criterionValidity(p);state.validityReport={schemaVersion:'1.0',generatedAt:new Date().toISOString(),file:file.name,parameter:$('#validityParam').value,reference:$('#validityReference').value,results:report};$('#validityStatus').textContent='Analyzed '+rows.length+' CSV rows.';renderValidityReport(report)}catch(e){$('#validityStatus').textContent='Validity error: '+e.message}})}
 function wire(){
   const on=(id,event,handler)=>{const el=$('#'+id);if(el)el.addEventListener(event,handler);};
-  on('globalNewAssessment','click',()=>{state.page='Voice Lab';if(!state.patient)state.patient=state.patients[0];render()});
+  on('globalNewAssessment','click',startNewAssessment);
   on('themeToggle','click',()=>{state.theme=state.theme==='night'?'day':'night';store.set('theme',state.theme);render()});
   on('runReliability','click',runReliabilityAnalysis );
   on('runValidity','click',runValidityAnalysis);
@@ -374,7 +410,7 @@ function wire(){
   document.querySelectorAll('[data-pid]').forEach(x=>x.onclick=()=>{state.patient=state.patients.find(p=>p.id===x.dataset.pid);render()});
   on('addP','click',()=>{const name=prompt('Patient display name');if(!name)return;const id='P-'+String(state.patients.length+1).padStart(3,'0');state.patients.push({id,name,age:'',sex:''});store.set('patients',state.patients);render()});
   document.querySelectorAll('[data-task]').forEach(x=>x.onclick=()=>{state.page='Voice Lab';render();setTimeout(()=>{const t=$('#task');if(t)t.value=x.dataset.task},0)});
-  // Record uses the direct inline mobile-safe handler; do not attach a second listener.// Stop uses the direct inline mobile-safe handler.on('reset','click',()=>{state.analysis=null;state.notice='Analysis reset.';render()});on('saveSession','click',saveSession);
+  on('reset','click',()=>{if(state.recording){state.recording=false;cleanupRecording()}if(state.analysisWorker){try{state.analysisWorker.terminate()}catch(_){ }state.analysisWorker=null}state.analysis=null;state.seconds=0;state.notice='Analysis reset.';render()});on('saveSession','click',saveSession);
   on('task','change',e=>{state.voiceTask=e.target.value;state.analysis=null;state.notice='Task set to '+e.target.options[e.target.selectedIndex].text+'.';render()});on('exportJSON','click',()=>{if(state.analysis)download('phonacore-analysis.json',state.analysis);else{state.notice='No analysis to export.';render()}});
   document.querySelectorAll('[data-report]').forEach(b=>b.onclick=()=>download('phonacore-report.json',state.sessions.find(s=>s.id===b.dataset.report)));
   on('newTele','click',()=>{state.tele={id:'TEL-'+Date.now().toString(36),status:'created',consent:false};render()});
