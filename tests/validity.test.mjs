@@ -1,0 +1,4 @@
+import test from 'node:test';import assert from 'node:assert/strict';import {criterionValidity,pearson,ccc,pairReference} from '../src/research/validity.js';
+test('criterion validity is exact for identical measurements',()=>{const r=criterionValidity([[1,1],[2,2],[3,3],[4,4]]);assert.equal(r.n,4);assert.equal(r.pearson,1);assert.equal(r.ccc,1);assert.equal(r.bias,0);assert.equal(r.rmse,0)});
+test('validity reports paired error and LoA',()=>{const r=criterionValidity([[10,11],[12,13],[14,15]]);assert.equal(r.bias,1);assert.equal(r.mae,1);assert.equal(r.rmse,1);assert.equal(r.loa95.length,2)});
+test('pair reference matches by sample id',()=>{const r=pairReference([{sample_id:'B',reference:2,phonacore:2.1},{sample_id:'A',reference:1,phonacore:1.1},{sample_id:'C',reference:3,phonacore:null}]);assert.deepEqual(r.map(x=>x.id),['B','A'])});
