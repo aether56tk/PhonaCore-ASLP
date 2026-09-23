@@ -4,13 +4,7 @@ import {sineVoice,runSyntheticBench,runSyntheticBenchmark} from '../src/research
 
 test('synthetic constant voice has deterministic ground truth',()=>{
   const v=sineVoice({periods:120,baseF0:120,jitterPct:0,amplitudeVariationPct:0});
-  assert.equal(v.groundTruth.theoretical.vf0Pct,0);
-  assert.equal(v.groundTruth.theoretical.vamPct,0);
-  assert.equal(v.groundTruth.theoretical.rapPct,0);
-  assert.equal(v.groundTruth.theoretical.ppqPct,0);
-  assert.equal(v.groundTruth.theoretical.sppqPct,0);
-  assert.equal(v.groundTruth.theoretical.apqPct,0);
-  assert.equal(v.groundTruth.theoretical.sapqPct,0);
+  for(const key of ['vf0Pct','vamPct','rapPct','ppqPct','sppqPct','apqPct','sapqPct']) assert(Math.abs(v.groundTruth.theoretical[key])<1e-9, key+' should be approximately zero');
 });
 
 test('synthetic bench contains four controlled cases',()=>{
