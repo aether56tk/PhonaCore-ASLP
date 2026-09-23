@@ -1,0 +1,34 @@
+{
+  "referenceSystem": "Multi-Dimensional Voice Program (MDVP)",
+  "purpose": "Define the initial PhonaCore-ASLP to MDVP comparison set before empirical validation.",
+  "directComparison": [
+    {"mdvp":"F0","phonacore":"f0Mean","unit":"Hz","status":"prototype"},
+    {"mdvp":"Fhi","phonacore":"f0Max","unit":"Hz","status":"prototype"},
+    {"mdvp":"Flo","phonacore":"f0Min","unit":"Hz","status":"prototype"},
+    {"mdvp":"STD","phonacore":"f0Sd","unit":"Hz","status":"prototype"},
+    {"mdvp":"Jita","phonacore":"jitaUs","unit":"us","status":"prototype"},
+    {"mdvp":"Jitt","phonacore":"jittPct","unit":"%","status":"prototype"},
+    {"mdvp":"RAP","phonacore":"rapPct","unit":"%","status":"prototype"},
+    {"mdvp":"PPQ","phonacore":"ppqPct","unit":"%","status":"prototype"},
+    {"mdvp":"sPPQ","phonacore":"sppqPct","unit":"%","status":"prototype"},
+    {"mdvp":"vF0","phonacore":"vf0Pct","unit":"%","status":"prototype"},
+    {"mdvp":"ShdB","phonacore":"shdB","unit":"dB","status":"prototype"},
+    {"mdvp":"Shim","phonacore":"shimPct","unit":"%","status":"prototype"},
+    {"mdvp":"APQ","phonacore":"apqPct","unit":"%","status":"prototype"},
+    {"mdvp":"sAPQ","phonacore":"sapqPct","unit":"%","status":"prototype"},
+    {"mdvp":"vAm","phonacore":"vamPct","unit":"%","status":"prototype"},
+    {"mdvp":"NHR","phonacore":"nhr","unit":"ratio","status":"prototype"}
+  ],
+  "additionalPhonacore": [
+    {"parameter":"CPP","field":"cppPrototypeDb","status":"additional; not a direct MDVP-equivalence endpoint"},
+    {"parameter":"T0","field":"t0Ms","status":"supporting"},
+    {"parameter":"PFR","field":"pfrSemitones","status":"supporting"}
+  ],
+  "methodRule": "A similarly named parameter must not be treated as equivalent until its operational definition, analysis window, pitch settings, smoothing factor, frequency range, preprocessing and valid-cycle criteria are matched or explicitly documented.",
+  "validation": {
+    "primary": ["bias","MAE","RMSE","Bland-Altman limits of agreement"],
+    "secondary": ["Pearson or Spearman correlation as appropriate","descriptive statistics"],
+    "important": "Correlation is not agreement."
+  },
+  "recordingRule": "The identical audio file should be analyzed by MDVP and PhonaCore-ASLP whenever possible so that recording variability is not confounded with software differences."
+}
