@@ -129,6 +129,28 @@ function spectralCepstrumCPP(samples,sr){
   return Number.isFinite(best)?best:null;
 }
 
+export function taskSpecificMetrics(samples,sr,task='vowel'){
+  const x=removeDC(samples), duration=x.length/sr, abs=x.map(v=>Math.abs(v));
+  const rmsDb=20*Math.log10(Math.max(rms(x),1e-9));
+  const track=pitchTrack(normalize(x),sr), f0=track.filter(v=>Number.isFinite(v.f0)).map(v=>v.f0);
+  const voiced=track.filter(v=>Number.isFinite(v.f0)), intensity=track.map(v=>20*Math.log10(Math.max(v.rms,1e-9)));
+  const result={task,durationSec:duration,mptSec:null,pitchRangeSemitones:null,pitchMinHz:null,pitchMaxHz:null,intensityMeanDb:rmsDb,intensityMinDb:null,intensityMaxDb:null,voicedPct:track.length?voiced.length/track.length*100:0};
+  if(f0.length){result.pitchMinHz=Math.min(...f0);result.pitchMaxHz=Math.max(...f0);result.pitchRangeSemitones=12*Math.log2(result.pitchMaxHz/result.pitchMinHz)}
+  if(intensity.length){result.intensityMinDb=Math.min(...intensity);result.intensityMaxDb=Math.max(...intensity);result.intensityMeanDb=mean(intensity)}
+  if(task==='mpt'||task==='vowel'){const threshold=Math.max(0.015,peak(x)*0.12);let best=0,run=0;for(const v of abs){if(v>=threshold)run++;else{best=Math.max(best,run);run=0}}best=Math.max(best,run);result.mptSec=best/sr}
+  return result;
+}
+export function measurementGate(a){
+  const issues=[], status={};
+  const checks={duration:a.durationSec>=2,voicing:a.voicedPct>=30,clipping:a.clippedPct<=1,cycles:(a.periods||[]).length>=3};
+  if(!checks.duration)issues.push('Recording shorter than 2 seconds');
+  if(!checks.voicing)issues.push('Insufficient voiced material');
+  if(!checks.clipping)issues.push('Clipping exceeds 1%');
+  if(!checks.cycles)issues.push('Insufficient reliable voice periods');
+  const core=['f0Mean','f0Min','f0Max','f0Sd','jitaUs','jittPct','rapPct','ppqPct','sppqPct','vf0Pct','shdB','shimPct','apqPct','sapqPct','vamPct','nhr'];
+  for(const k of core)status[k]=checks.voicing&&checks.cycles&&Number.isFinite(a[k])?'valid':Number.isFinite(a[k])?'limited':'unavailable';
+  return {overall:issues.length?'limited':'valid',issues,status};
+}
 export function analyzeVoice(samples,sr){
   const clean=normalize(removeDC(samples)),duration=samples.length/sr,p=peak(samples),r=rms(samples);
   const track=pitchTrack(clean,sr),periods=extractPeriods(clean,sr),seq=periodSequenceFeatures(periods),voiced=track.filter(x=>x.f0),f0s=voiced.map(x=>x.f0);
@@ -136,6 +158,7 @@ export function analyzeVoice(samples,sr){
   const clipped=samples.length?samples.filter(x=>Math.abs(x)>=.99).length/samples.length*100:0;
   const voicedPct=track.length?voiced.length/track.length*100:0;
   const quality=Math.max(0,Math.min(100,Math.round(100-0.5*clipped-0.35*Math.max(0,40-voicedPct))));
+  const taskMetrics=taskSpecificMetrics(samples,sr,'vowel');
   const f0Mean=mean(f0s),f0Min=f0s.length?Math.min(...f0s):null,f0Max=f0s.length?Math.max(...f0s):null;
   return {
     sampleRate:sr,durationSec:duration,f0Mean,f0Median:median(f0s),f0Min,f0Max,f0Sd:sd(f0s),
@@ -148,7 +171,9 @@ export function analyzeVoice(samples,sr){
     quality:{score:quality,label:quality>=80?'Good':quality>=60?'Review':'Poor',issues:[...(clipped>1?['Clipping detected']:[]),...(voicedPct<30?['Low voiced-frame proportion']:[]),...(duration<2?['Short recording']:[])]},
     pitchTrack:track,periods,periodLevel,
     measurementStatus:{
-      core:'prototype',
+      core:'research',
+      gate:measurementGate({durationSec:duration,voicedPct,clippedPct:clipped,periods}),
+      task:taskMetrics,
       mdvpComparable:['F0','Fhi','Flo','STD','Jita','Jitt','RAP','PPQ','sPPQ','vF0','ShdB','Shim','APQ','sAPQ','vAm','NHR'],
       note:'MDVP-oriented definitions and default smoothing windows are implemented as research targets; equivalence still requires paired empirical validation against the reference software.'
     }
