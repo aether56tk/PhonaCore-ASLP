@@ -1,0 +1,3 @@
+import test from 'node:test';import assert from 'node:assert/strict';import {evaluateFinalQa} from '../src/research/finalQa.js';
+test('final QA blocks incomplete study',()=>{const r=evaluateFinalQa({});assert.equal(r.ready,false);assert.equal(r.passed,0)});
+test('final QA recognizes completed controlled checks',()=>{const r=evaluateFinalQa({algorithmValidation:{overallPass:true},studyManifest:{protocolVersion:'1'},batchResults:[{protocolStatus:'PASS',sha256:'a'.repeat(64)}],validationReport:{matched:2},reliabilityReport:{testRetest:{n:2}},publicationPackage:{generatedAt:'x'}});assert.equal(r.ready,true);});
