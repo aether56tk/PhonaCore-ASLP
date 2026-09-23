@@ -8,8 +8,52 @@ function removeDC(a){const m=mean(a);return a.map(x=>x-m)}
 function normalize(a){const p=peak(a);return p?a.map(x=>x/p):[...a]}
 function hann(n){const w=new Float32Array(n);for(let i=0;i<n;i++)w[i]=0.5*(1-Math.cos(2*Math.PI*i/(n-1)));return w}
 function frames(samples,sr,ms=40,hopMs=10){const n=Math.max(32,Math.round(sr*ms/1000)),hop=Math.max(1,Math.round(sr*hopMs/1000)),out=[];for(let i=0;i+n<=samples.length;i+=hop)out.push(samples.slice(i,i+n));return out}
-function autocorrelationF0(x,sr,minHz=70,maxHz=400){if(!x.length)return null;const lo=Math.max(1,Math.floor(sr/maxHz)),hi=Math.min(x.length-2,Math.ceil(sr/minHz));let best=-Infinity,bestLag=0;let energy=0;for(const v of x)energy+=v*v;if(!energy)return null;for(let lag=lo;lag<=hi;lag++){let c=0,e1=0,e2=0;for(let i=0;i<x.length-lag;i++){const a=x[i],b=x[i+lag];c+=a*b;e1+=a*a;e2+=b*b}const r=c/Math.sqrt((e1*e2)||1);if(r>best){best=r;bestLag=lag}}return best>.35?sr/bestLag:null}
-function pitchTrack(samples,sr){return frames(samples,sr).map((x,i)=>({time:i*.01,f0:autocorrelationF0(x,sr),rms:rms(x)}))}
+function nextPow2(n){let p=1;while(p<n)p<<=1;return p}
+const FFT_CACHE=new Map();
+function fftRadix2(re,im,inverse=false){
+  const n=re.length;
+  let cache=FFT_CACHE.get(n);
+  if(!cache){
+    const rev=new Uint32Array(n),levels=Math.log2(n);
+    for(let i=0;i<n;i++){let x=i,y=0;for(let b=0;b<levels;b++){y=(y<<1)|(x&1);x>>=1}rev[i]=y}
+    const cos=[],sin=[];
+    for(let len=2;len<=n;len<<=1){
+      const half=len>>1,step=2*Math.PI/len,cr=new Float64Array(half),si=new Float64Array(half);
+      for(let j=0;j<half;j++){cr[j]=Math.cos(step*j);si[j]=Math.sin(step*j)}
+      cos.push(cr);sin.push(si);
+    }
+    cache={rev,cos,sin};FFT_CACHE.set(n,cache);
+  }
+  for(let i=0;i<n;i++){const j=cache.rev[i];if(j>i){let t=re[i];re[i]=re[j];re[j]=t;t=im[i];im[i]=im[j];im[j]=t}}
+  let level=0;
+  for(let len=2;len<=n;len<<=1,level++){
+    const half=len>>1,cr=cache.cos[level],si=cache.sin[level];
+    for(let i=0;i<n;i+=len){
+      for(let j=0;j<half;j++){
+        const wr=cr[j],wi=inverse?si[j]:-si[j],k=i+j,m=k+half;
+        const tr=wr*re[m]-wi*im[m],ti=wr*im[m]+wi*re[m];
+        const ur=re[k],ui=im[k];re[k]=ur+tr;im[k]=ui+ti;re[m]=ur-tr;im[m]=ui-ti;
+      }
+    }
+  }
+  if(inverse){for(let i=0;i<n;i++){re[i]/=n;im[i]/=n}}
+  return {re,im};
+}
+function autocorrelationF0(x,sr,minHz=70,maxHz=400){
+  if(!x.length)return null;
+  const n=nextPow2(x.length*2),re=new Float64Array(n),im=new Float64Array(n);
+  let energy=0;
+  for(let i=0;i<x.length;i++){const v=x[i];re[i]=v;energy+=v*v}
+  if(!energy)return null;
+  fftRadix2(re,im,false);
+  for(let i=0;i<n;i++)re[i]=re[i]*re[i]+im[i]*im[i],im[i]=0;
+  fftRadix2(re,im,true);
+  const lo=Math.max(1,Math.floor(sr/maxHz)),hi=Math.min(x.length-2,Math.ceil(sr/minHz));
+  let best=-Infinity,bestLag=0;
+  for(let lag=lo;lag<=hi;lag++){const r=re[lag]/energy;if(r>best){best=r;bestLag=lag}}
+  return best>.35?sr/bestLag:null;
+}
+function pitchTrack(samples,sr){return frames(samples,sr,40,20).map((x,i)=>({time:i*.02,f0:autocorrelationF0(x,sr),rms:rms(x)}))}
 
 /**
  * Period-level research extraction.
@@ -103,33 +147,33 @@ function amplitudeFeatures(track){
 }
 
 function spectralNoise(samples,sr,f0){
-  const n=Math.min(4096,samples.length);if(n<512||!f0)return{nhr:null,vti:null,spi:null};
-  const x=samples.slice(0,n),w=hann(n);let harm=0,highNon=0,lowH=0,highH=0;
-  const binHz=sr/n;
+  const n=Math.min(4096,nextPow2(samples.length));if(n<512||!f0)return{nhr:null,vti:null,spi:null};
+  const re=new Float64Array(n),im=new Float64Array(n),w=hann(n);
+  for(let t=0;t<n;t++)re[t]=(samples[t]||0)*w[t];
+  fftRadix2(re,im,false);
+  const binHz=sr/n;let harm=0,highNon=0,lowH=0,highH=0;
   for(let k=1;k<n/2;k++){
-    let re=0,im=0;
-    for(let t=0;t<n;t++){const ang=2*Math.PI*k*t/n,v=x[t]*w[t];re+=v*Math.cos(ang);im-=v*Math.sin(ang)}
-    const e=re*re+im*im,hz=k*binHz;
+    const e=re[k]*re[k]+im[k]*im[k],hz=k*binHz;
     if(hz<70||hz>5800)continue;
-    const nearest=Math.abs(hz/Math.max(f0,1)-Math.round(hz/Math.max(f0,1)));
-    const isH=nearest<0.03||nearest>0.97;
+    const ratio=hz/Math.max(f0,1),nearest=Math.abs(ratio-Math.round(ratio)),isH=nearest<.03||nearest>.97;
     if(isH&&hz<=4500){harm+=e;if(hz<=1600)lowH+=e;if(hz>=1600)highH+=e}
     if(!isH&&hz>=1500&&hz<=4500)highNon+=e;
   }
-  return {nhr:harm?highNon/harm:null,vti:harm?highNon/harm:null,spi:highH?lowH/highH:null};
+  return{nhr:harm?highNon/harm:null,vti:harm?highNon/harm:null,spi:highH?lowH/highH:null};
 }
-
 function spectralCepstrumCPP(samples,sr){
   const n=2048;if(samples.length<n)return null;let best=-Infinity;
-  for(let start=0;start+n<=samples.length;start+=Math.floor(n/2)){
-    const x=samples.slice(start,start+n),w=hann(n),re=new Float64Array(n),im=new Float64Array(n);
-    for(let k=0;k<n;k++){let rr=0,ii=0;for(let t=0;t<n;t++){const ang=2*Math.PI*k*t/n,v=x[t]*w[t];rr+=v*Math.cos(ang);ii-=v*Math.sin(ang)}re[k]=rr;im[k]=ii}
-    const logp=new Float64Array(n);for(let k=0;k<n;k++)logp[k]=Math.log(Math.max(1e-12,re[k]*re[k]+im[k]*im[k]));
-    for(let q=Math.round(sr/400);q<=Math.min(Math.round(sr/70),n/2);q++){let c=0;for(let k=0;k<n;k++)c+=logp[k]*Math.cos(2*Math.PI*k*q/n);best=Math.max(best,c/n)}
+  for(let start=0;start+n<=samples.length;start+=n>>1){
+    const re=new Float64Array(n),im=new Float64Array(n),w=hann(n);
+    for(let t=0;t<n;t++)re[t]=samples[start+t]*w[t];
+    fftRadix2(re,im,false);
+    for(let k=0;k<n;k++)re[k]=Math.log(Math.max(1e-12,re[k]*re[k]+im[k]*im[k])),im[k]=0;
+    fftRadix2(re,im,true);
+    const lo=Math.max(1,Math.round(sr/400)),hi=Math.min(n/2,Math.round(sr/70));
+    for(let q=lo;q<=hi;q++)best=Math.max(best,re[q]);
   }
   return Number.isFinite(best)?best:null;
 }
-
 function analyzeVoice(samples,sr){
   const clean=normalize(removeDC(samples)),duration=samples.length/sr,p=peak(samples),r=rms(samples);
   const track=pitchTrack(clean,sr),periods=extractPeriods(clean,sr),seq=periodSequenceFeatures(periods),voiced=track.filter(x=>x.f0),f0s=voiced.map(x=>x.f0);
