@@ -34,40 +34,24 @@ async function startRecord(){
     state.analyser.fftSize=2048;
     src.connect(state.analyser);
 
-    // Capture raw PCM directly from Web Audio. Try AudioWorklet first, but
-    // automatically fall back to ScriptProcessor when the worklet module is
-    // unavailable on a mobile/GitHub Pages browser.
+    // Mobile-safe raw PCM capture. Do not use AudioWorklet here: some
+    // embedded/mobile browsers reject external worklet modules even though
+    // microphone access itself works.
     state.pcmChunks=[];
     state.recording=true;
-    let captured=false;
-    if(state.audioContext.audioWorklet&&typeof AudioWorkletNode!=='undefined'){
-      try{
-        const workletUrl=new URL('pcm-worklet.js',document.baseURI).href;
-        await state.audioContext.audioWorklet.addModule(workletUrl);
-        state.pcmProcessor=new AudioWorkletNode(state.audioContext,'phonacore-pcm',{numberOfInputs:1,numberOfOutputs:1,channelCount:1});
-        state.pcmProcessor.port.onmessage=e=>{
-          if(state.recording&&e.data?.length)state.pcmChunks.push(new Float32Array(e.data));
-        };
-        src.connect(state.pcmProcessor);
-        const mute=state.audioContext.createGain(); mute.gain.value=0;
-        state.pcmProcessor.connect(mute); mute.connect(state.audioContext.destination);
-        captured=true;
-      }catch(_){ try{state.pcmProcessor?.disconnect?.()}catch(__){} state.pcmProcessor=null; }
-    }
-    if(!captured&&state.audioContext.createScriptProcessor){
-      state.pcmProcessor=state.audioContext.createScriptProcessor(4096,1,1);
-      const mute=state.audioContext.createGain(); mute.gain.value=0;
-      state.pcmProcessor.onaudioprocess=e=>{
-        if(state.recording)state.pcmChunks.push(new Float32Array(e.inputBuffer.getChannelData(0)));
-      };
-      src.connect(state.pcmProcessor);
-      state.pcmProcessor.connect(mute); mute.connect(state.audioContext.destination);
-      captured=true;
-    }
-    if(!captured){
+    if(!state.audioContext.createScriptProcessor){
       state.recording=false;
       throw new Error('This browser cannot provide raw microphone samples.');
     }
+    state.pcmProcessor=state.audioContext.createScriptProcessor(4096,1,1);
+    const mute=state.audioContext.createGain();
+    mute.gain.value=0;
+    state.pcmProcessor.onaudioprocess=e=>{
+      if(state.recording)state.pcmChunks.push(new Float32Array(e.inputBuffer.getChannelData(0)));
+    };
+    src.connect(state.pcmProcessor);
+    state.pcmProcessor.connect(mute);
+    mute.connect(state.audioContext.destination);
     state.notice='Microphone connected. Recording PCM samples…';
     state.seconds=0;
     state.notice='Recording… speak naturally.';
