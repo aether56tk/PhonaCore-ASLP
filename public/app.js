@@ -113,6 +113,9 @@ function cleanupRecording(){
   state.timer=null;
   for(const t of state.stream?.getTracks?.()||[])t.stop();
   state.stream=null;
+  try{state.pcmProcessor?.disconnect?.()}catch(_){}
+  state.pcmProcessor=null;
+  state.pcmChunks=[];
   if(state.audioContext?.state!=='closed')state.audioContext?.close?.();
   state.analyser=null;
   state.recorder=null;
