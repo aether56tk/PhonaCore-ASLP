@@ -1,0 +1,2 @@
+import {summarizeParameter} from "./metrics.js";
+export function buildValidationReport(rows,parameters=["f0","jitter","shimmer","cpp"]){const report={generatedAt:new Date().toISOString(),rows:rows?.length||0,parameters:{}};for(const p of parameters){const ref=(rows||[]).map(r=>r?.reference?.[p]).filter(Number.isFinite),svx=(rows||[]).map(r=>r?.securavox?.[p]).filter(Number.isFinite),n=Math.min(ref.length,svx.length);report.parameters[p]=summarizeParameter(ref.slice(0,n),svx.slice(0,n))}return report}
