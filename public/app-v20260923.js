@@ -1,5 +1,5 @@
 /* PhonaCore-ASLP build: 2026-09-23-fix-algorithm-validation */
-window.__PHONACORE_BUILD='2026-09-23-final-qa2';
+window.__PHONACORE_BUILD='2026-09-23-clinical-ux1';
 const {analyzeVoice,stats,mean,sd}=window.SV_DSP;
 const $=s=>document.querySelector(s), store={get(k,d){try{return JSON.parse(localStorage.getItem('sv_'+k))??d}catch{return d}},set(k,v){try{localStorage.setItem('sv_'+k,JSON.stringify(v));return true}catch(e){return false}}};
 let state={page:'Dashboard',theme:store.get('theme','night'),patient:null,patients:store.get('patients',[]),sessions:store.get('sessions',[]),recording:false,stream:null,recorder:null,chunks:[],pcmChunks:[],pcmProcessor:null,timer:null,seconds:0,analysis:null,tele:null,datasets:store.get('datasets',[]),experiments:store.get('experiments',[]),audioFiles:[],fileDirectory:null,pendingRecordingId:null};
@@ -107,6 +107,12 @@ async function finishPCM(){
     const sr=state.audioContext?.sampleRate||44100;
     const task=state.voiceTask||'vowel';
     const duration=pcm.length/sr;
+    if(!state.patient)throw new Error('No real participant is selected.');
+    const recordingId='PC-'+Date.now().toString(36).toUpperCase();
+    state.pendingRecordingId=recordingId;
+    const wav=pcmToWavBlob(pcm,sr);
+    const fileName=(state.patient.id||'participant')+'_'+recordingId+'_'+task+'.wav';
+    storeAudioFile({id:recordingId,name:fileName,patientId:state.patient.id,task,duration,sampleRate:sr,createdAt:new Date().toISOString(),blob:wav}).then(refreshAudioFiles).catch(e=>console.error('Audio local storage failed',e));
     // Release the microphone immediately, then perform the CPU-heavy acoustic analysis off the UI thread.
     cleanupRecording();
     state.recording=false;
@@ -211,7 +217,7 @@ function downloadBlob(name,blob){const a=document.createElement('a'),u=URL.creat
 async function saveBlobToFolder(blob,name){if(state.fileDirectory){const h=await state.fileDirectory.getFileHandle(name,{create:true}),w=await h.createWritable();await w.write(blob);await w.close();return 'Saved to selected folder'}if(window.showDirectoryPicker){state.fileDirectory=await window.showDirectoryPicker({mode:'readwrite'});const h=await state.fileDirectory.getFileHandle(name,{create:true}),w=await h.createWritable();await w.write(blob);await w.close();return 'Saved to selected folder'}downloadBlob(name,blob);return 'Downloaded'}
 function renderAudioFiles(){const el=$('#audioFileList');if(!el)return;if(!state.audioFiles.length){el.innerHTML='<div class="empty">No recordings stored yet.</div>';return}el.innerHTML='<div class="tablewrap"><table><thead><tr><th>File</th><th>Participant</th><th>Task</th><th>Duration</th><th>Date</th><th>Actions</th></tr></thead><tbody>'+state.audioFiles.map(x=>'<tr><td>'+x.name+'</td><td>'+x.patientId+'</td><td>'+x.task+'</td><td>'+f(x.duration)+' s</td><td>'+new Date(x.createdAt).toLocaleString()+'</td><td><button class="btn" data-audio-play="'+x.id+'">Play</button> <button class="btn" data-audio-save="'+x.id+'">Save file</button> <button class="btn" data-audio-delete="'+x.id+'">Delete</button></td></tr>').join('')+'</tbody></table></div>'}
 async function refreshAudioFiles(){try{state.audioFiles=await listAudioFiles()}catch(e){state.audioFiles=[]}renderAudioFiles()}
-function saveSession(){if(!state.analysis)return;const id='PC-'+Date.now().toString(36).toUpperCase();const s={id,patientId:state.patient?.id||'P-001',task:state.voiceTask||'vowel',createdAt:new Date().toISOString(),status:'completed',recordingMeta:state.analysis.recordingMeta,m:state.analysis,quality:state.analysis.quality};state.sessions.unshift(s);store.set('sessions',state.sessions);state.notice='Session saved locally';render()}
+function saveSession(){if(!state.analysis||!state.patient){state.notice='Select a real participant and complete a recording first.';render();return}const id=state.pendingRecordingId||'PC-'+Date.now().toString(36).toUpperCase();const existing=state.sessions.find(s=>s.id===id);const s={id,patientId:state.patient.id,task:state.voiceTask||'vowel',createdAt:new Date().toISOString(),status:'completed',recordingMeta:state.analysis.recordingMeta,m:state.analysis,quality:state.analysis.quality};if(existing)Object.assign(existing,s);else state.sessions.unshift(s);store.set('sessions',state.sessions);state.notice='Session saved locally';render()}
 function svgWaveform(samples){if(!samples||!samples.length)return'<div class="empty">Waveform unavailable.</div>';const n=Math.min(samples.length,2400),step=Math.max(1,Math.floor(samples.length/n)),pts=[];for(let i=0;i<n;i+=1){let sum=0,c=0;for(let j=i*step;j<Math.min(samples.length,(i+1)*step);j++){sum+=samples[j];c++}const y=110-(sum/(c||1))*90;pts.push((i/(n-1||1)*800)+','+Math.max(10,Math.min(210,y)))}return'<svg viewBox="0 0 800 220" preserveAspectRatio="none" style="width:100%;height:100%"><polyline fill="none" stroke="currentColor" stroke-width="1.5" points="'+pts.join(' ')+'"/></svg>'}
 function reportGraphs(s){const pts=(s.m.pitchTrack||[]).filter(x=>x.f0).map(x=>x.f0);return card('Signal visualization','<h3>F0 contour</h3><div class="chart">'+line(pts)+'</div><h3>Waveform</h3><div class="chart" id="reportWaveform"><div class="empty">Waveform is retained only for the current browser session unless exported by the user.</div></div>')}
 function parameterTable(m){const rows=[['F0 mean','f0Mean','Hz'],['F0 min','f0Min','Hz'],['F0 max','f0Max','Hz'],['F0 SD','f0Sd','Hz'],['T0','t0Ms','ms'],['Jita','jitaUs','µs'],['Jitt','jittPct','%'],['RAP','rapPct','%'],['PPQ','ppqPct','%'],['sPPQ','sppqPct','%'],['vF0','vf0Pct','%'],['ShdB','shdB','dB'],['Shim','shimPct','%'],['APQ','apqPct','%'],['sAPQ','sapqPct','%'],['vAm','vamPct','%'],['NHR','nhr','ratio'],['VTI','vti','ratio'],['SPI','spi','ratio'],['CPP*','cppPrototypeDb','dB-like']];return '<table><thead><tr><th>Parameter</th><th>Value</th><th>Unit</th></tr></thead><tbody>'+rows.map(x=>'<tr><td>'+x[0]+'</td><td>'+f(m[x[1]])+'</td><td>'+x[2]+'</td></tr>').join('')+'</tbody></table>'}
@@ -429,21 +435,29 @@ function wire(){
   on('clearHealth','click',()=>document.querySelectorAll('.vocalSymptom,.dailyVoice').forEach(x=>x.checked=false));
   on('runMdvp','click',runMdvpValidation);
   on('clearMdvp','click',()=>{$('#mdvpResult').innerHTML=''});
-  on('newA','click',()=>{state.page='Voice Lab';if(!state.patient)state.patient=state.patients[0];render()});
-  on('patientAssess','click',()=>{state.page='Voice Lab';render()});
+  on('newA','click',startNewAssessment);
+  on('patientAssess','click',()=>{if(!state.patient){state.page='Patients';state.notice='Select a real participant first.'}else{state.page='Clinical';state.notice='Complete or review the clinical assessment before recording.'}render()});
+  on('continueVoiceLab','click',()=>{if(!state.patient){state.page='Patients';state.notice='Select a real participant first.'}else{state.page='Voice Lab';state.notice='Voice Lab ready for '+(state.patient.name||state.patient.id)+'.'}render()});
+  on('goPatients','click',()=>{state.page='Patients';render()});
+  on('saveParticipant','click',()=>{const id=$('#pId')?.value.trim(),name=$('#pName')?.value.trim(),age=$('#pAge')?.value.trim(),sex=$('#pSex')?.value;if(!id||!name||!age||!sex){state.notice='Enter Participant ID, name, age and sex.';render();return}if(state.patients.some(p=>p.id===id)){state.notice='Participant ID already exists.';render();return}const p={id,name,age:Number(age),sex};state.patients.push(p);state.patient=p;store.set('patients',state.patients);state.page='Clinical';state.notice='Participant saved. Continue with clinical assessment.';render()});
   document.querySelectorAll('[data-pid]').forEach(x=>x.onclick=()=>{state.patient=state.patients.find(p=>p.id===x.dataset.pid);render()});
-  on('addP','click',()=>{const name=prompt('Patient display name');if(!name)return;const id='P-'+String(state.patients.length+1).padStart(3,'0');state.patients.push({id,name,age:'',sex:''});store.set('patients',state.patients);render()});
-  document.querySelectorAll('[data-task]').forEach(x=>x.onclick=()=>{state.page='Voice Lab';render();setTimeout(()=>{const t=$('#task');if(t)t.value=x.dataset.task},0)});
+  document.querySelectorAll('[data-research-tool]').forEach(x=>x.onclick=()=>{state.page=x.dataset.researchTool;render()});
   on('reset','click',()=>{if(state.recording){state.recording=false;cleanupRecording()}if(state.analysisWorker){try{state.analysisWorker.terminate()}catch(_){ }state.analysisWorker=null}state.analysis=null;state.seconds=0;state.notice='Analysis reset.';render()});on('saveSession','click',saveSession);
   on('task','change',e=>{state.voiceTask=e.target.value;state.analysis=null;state.notice='Task set to '+e.target.options[e.target.selectedIndex].text+'.';render()});on('exportJSON','click',()=>{if(state.analysis)download('phonacore-analysis.json',state.analysis);else{state.notice='No analysis to export.';render()}});
   document.querySelectorAll('[data-report]').forEach(b=>b.onclick=()=>download('phonacore-report.json',state.sessions.find(s=>s.id===b.dataset.report)));
+  on('chooseAudioFolder','click',async()=>{try{if(!window.showDirectoryPicker){state.notice='Folder export is not supported here; use Save file on each recording.';render();return}state.fileDirectory=await window.showDirectoryPicker({mode:'readwrite'});state.notice='Export folder selected.';render()}catch(e){state.notice='Folder selection cancelled.';render()}});
+  document.querySelectorAll('[data-audio-play]').forEach(b=>b.onclick=async()=>{try{const x=await getAudioFile(b.dataset.audioPlay);if(!x?.blob)return;const u=URL.createObjectURL(x.blob),a=new Audio(u);a.onended=()=>URL.revokeObjectURL(u);await a.play()}catch(e){state.notice='Playback failed: '+e.message;render()}});
+  document.querySelectorAll('[data-audio-save]').forEach(b=>b.onclick=async()=>{try{const x=await getAudioFile(b.dataset.audioSave);if(!x?.blob)throw new Error('Recording not found.');const msg=await saveBlobToFolder(x.blob,x.name);state.notice=msg+': '+x.name;render()}catch(e){state.notice='File save failed: '+e.message;render()}});
+  document.querySelectorAll('[data-audio-delete]').forEach(b=>b.onclick=async()=>{if(!confirm('Delete this local recording?'))return;try{await deleteAudioFile(b.dataset.audioDelete);await refreshAudioFiles();state.notice='Recording deleted locally.';render()}catch(e){state.notice='Delete failed: '+e.message;render()}});
   on('newTele','click',()=>{state.tele={id:'TEL-'+Date.now().toString(36),status:'created',consent:false};render()});
   on('consent','click',()=>{if(!state.tele)return;state.tele.consent=true;state.tele.status='ready';render()});
   on('teleNext','click',()=>{if(!state.tele)return;state.tele.status=state.tele.status==='ready'?'active':'completed';render()});
   on('newExp','click',()=>{state.experiments.unshift({id:'EXP-'+Date.now().toString(36),name:'Voice validation study',createdAt:new Date().toISOString(),researchQuestion:'Compare browser measurements with reference measurements.'});store.set('experiments',state.experiments);$('#researchOut').textContent=JSON.stringify(state.experiments,null,2)});
   on('createDs','click',()=>{state.datasets.unshift({id:'DS-'+Date.now().toString(36),name:$('#dsname').value,samples:[]});store.set('datasets',state.datasets);render()});
-  on('downloadAll','click',()=>download('phonacore-local-export.json',{patients:state.patients,sessions:state.sessions,datasets:state.datasets,experiments:state.experiments,exportedAt:new Date().toISOString()}));
+  on('downloadAll','click',()=>download('phonacore-local-export.json',{patients:state.patients,sessions:state.sessions,datasets:state.datasets,experiments:state.experiments,audioFiles:state.audioFiles.map(x=>({id:x.id,name:x.name,patientId:x.patientId,task:x.task,duration:x.duration,createdAt:x.createdAt})),exportedAt:new Date().toISOString()}));
+  on('clearAllLocal','click',()=>{if(!confirm('Clear all local metadata? Audio files in File Manager are not deleted.'))return;for(const k of ['sessions','patients','datasets','experiments'])localStorage.removeItem('sv_'+k);state.sessions=[];state.patients=[];state.datasets=[];state.experiments=[];state.patient=null;state.notice='Local metadata cleared. Audio files remain in File Manager.';render()});
 }
 function f(x){return Number.isFinite(x)?x.toFixed(2):'—'}
 function download(name,data){try{const a=document.createElement('a'),url=URL.createObjectURL(new Blob([JSON.stringify(data,null,2)],{type:'application/json'}));a.href=url;a.download=name;a.rel='noopener';document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);state.notice='Download prepared: '+name}catch(e){state.notice='Download failed: '+e.message}render()}
 render();
+refreshAudioFiles();
