@@ -27,3 +27,6 @@ test('MDVP amplitude hierarchy exposes APQ 11 and sAPQ 55 windows',()=>{
   assert(Number.isFinite(a.apqPct));
   assert(Number.isFinite(a.sapqPct));
 });
+
+
+test('period extraction exposes period-level records',()=>{const sr=8000,x=Array.from({length:24000},(_,i)=>.2*Math.sin(2*Math.PI*120*i/sr));const p=extractPeriods(x,sr);assert(p.length>20);assert(p.every(q=>q.periodSec>0&&q.f0>0&&q.peakToPeak>0));});
