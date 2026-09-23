@@ -53,7 +53,7 @@ function autocorrelationF0(x,sr,minHz=70,maxHz=400){
   for(let lag=lo;lag<=hi;lag++){const r=re[lag]/energy;if(r>best){best=r;bestLag=lag}}
   return best>.35?sr/bestLag:null;
 }
-function pitchTrack(samples,sr){return frames(samples,sr,40,20).map((x,i)=>({time:i*.02,f0:autocorrelationF0(x,sr),rms:rms(x)}))}
+function pitchTrack(samples,sr){return frames(samples,sr,25,20).map((x,i)=>({time:i*.02,f0:autocorrelationF0(x,sr),rms:rms(x)}))}
 
 /**
  * Period-level research extraction.
