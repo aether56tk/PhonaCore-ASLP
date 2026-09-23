@@ -24,7 +24,6 @@ async function startRecord(){
     if(!C)throw new Error('Web Audio API is not available in this browser.');
     state.voiceTask=$('#task')?.value||'vowel';
     state.notice='Requesting microphone permission…';
-    render();
     state.stream=await navigator.mediaDevices.getUserMedia({audio:{channelCount:1,echoCancellation:false,noiseSuppression:false,autoGainControl:false}});
     state.audioContext=new C();
     if(state.audioContext.state==='suspended')await state.audioContext.resume();
@@ -285,7 +284,7 @@ function wire(){
   document.querySelectorAll('[data-pid]').forEach(x=>x.onclick=()=>{state.patient=state.patients.find(p=>p.id===x.dataset.pid);render()});
   on('addP','click',()=>{const name=prompt('Patient display name');if(!name)return;const id='P-'+String(state.patients.length+1).padStart(3,'0');state.patients.push({id,name,age:'',sex:''});store.set('patients',state.patients);render()});
   document.querySelectorAll('[data-task]').forEach(x=>x.onclick=()=>{state.page='Voice Lab';render();setTimeout(()=>{const t=$('#task');if(t)t.value=x.dataset.task},0)});
-  on('record','click',()=>{state.notice='Record button pressed. Starting microphone…';render();setTimeout(startRecord,0)});on('stop','click',()=>{if(state.recorder&&state.recorder.state!=='inactive')state.recorder.stop();else{cleanupRecording();state.recording=false;state.notice='No active recording.';render()}});on('reset','click',()=>{state.analysis=null;render()});on('saveSession','click',saveSession);on('exportJSON','click',()=>download('phonacore-analysis.json',state.analysis));
+  on('record','click',startRecord);on('stop','click',()=>{if(state.recorder&&state.recorder.state!=='inactive')state.recorder.stop();else{cleanupRecording();state.recording=false;state.notice='No active recording.';render()}});on('reset','click',()=>{state.analysis=null;render()});on('saveSession','click',saveSession);on('exportJSON','click',()=>download('phonacore-analysis.json',state.analysis));
   document.querySelectorAll('[data-report]').forEach(b=>b.onclick=()=>download('phonacore-report.json',state.sessions.find(s=>s.id===b.dataset.report)));
   on('newTele','click',()=>{state.tele={id:'TEL-'+Date.now().toString(36),status:'created',consent:false};render()});
   on('consent','click',()=>{if(!state.tele)return;state.tele.consent=true;state.tele.status='ready';render()});
