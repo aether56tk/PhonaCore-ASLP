@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {mdvpPerturbation,periodFeatures,amplitudeFeatures} from '../src/dsp.js';
+import {mdvpPerturbation,periodFeatures,amplitudeFeatures,extractPeriods} from '../src/dsp.js';
 
 test('MDVP RAP/PPQ/sPPQ windows use odd centered windows',()=>{
   const v=Array.from({length:55},()=>10);
