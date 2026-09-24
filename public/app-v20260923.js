@@ -1,5 +1,5 @@
 /* PhonaCore-ASLP build: 2026-09-23-fix-algorithm-validation */
-window.__PHONACORE_BUILD='2026-09-24-clinical-ux27';
+window.__PHONACORE_BUILD='2026-09-24-clinical-ux28';
 const {analyzeVoice,stats,mean,sd}=window.SV_DSP;
 const $=s=>document.querySelector(s), store={get(k,d){try{const raw=localStorage.getItem('sv_'+k);if(raw!==null)return JSON.parse(raw)}catch(e){}try{const raw=sessionStorage.getItem('sv_'+k);if(raw!==null)return JSON.parse(raw)}catch(e){}return d},set(k,v){const raw=JSON.stringify(v);try{localStorage.setItem('sv_'+k,raw);return true}catch(e){try{sessionStorage.setItem('sv_'+k,raw);return true}catch(_){return false}}}};
 let state={page:'Dashboard',mode:store.get('mode','clinical'),theme:store.get('theme','night'),patient:null,patients:store.get('patients',[]),sessions:store.get('sessions',[]),recording:false,stream:null,recorder:null,chunks:[],pcmChunks:[],pcmProcessor:null,timer:null,seconds:0,analysis:null,tele:null,datasets:store.get('datasets',[]),experiments:store.get('experiments',[]),audioFiles:[],fileDirectory:null,pendingRecordingId:null};
@@ -33,7 +33,7 @@ function reportPage(){
  card('3 · Acoustic measurements',parameterTable(m))+
  card('4 · Signal visualization','<h3>F0 contour</h3><div class="chart">'+line((m.pitchTrack||[]).filter(x=>x.f0).map(x=>x.f0))+'</div><h3>Waveform preview</h3><div class="chart">'+(m.waveformPreview?.length?'<svg viewBox="0 0 800 220" preserveAspectRatio="none">'+(()=>{const v=m.waveformPreview,max=Math.max(...v.map(Math.abs))||1;return '<polyline fill="none" stroke="currentColor" stroke-width="1.5" points="'+v.map((x,i)=>(i/(v.length-1||1)*800)+','+(110-x/max*95)).join(' ')+'"/>'})()+'</svg>':'<div class="empty">Waveform preview was not retained for this assessment.</div>')+'</div><p class="small">A true spectrogram is shown only when raw signal frames are retained; PhonaCore does not substitute a synthetic image for missing signal data.</p>')+
  card('5 · Voice profile',radialProfile(m))+
- card('6 · Research fingerprint','<pre class="fingerprint">'+escapeHtml(JSON.stringify(fp,null,2))+'</pre>')+
+ card('6 · Research fingerprint','<pre class="fingerprint">'+JSON.stringify(fp,null,2).replace(/</g,'&lt;')+'</pre>')+
  card('Next step','<div class="toolbar"><button class="btn primary" onclick="state.page=\'Recommendations\';render()">Open recommendations →</button><button class="btn" onclick="state.mode=state.mode===\'clinical\'?\'research\':\'clinical\';store.set(\'mode\',state.mode);render()">Switch to '+(state.mode==='clinical'?'Research':'Clinical')+' mode</button><button class="btn" onclick="window.print()">Print report</button></div>');
 }
 function recommendationsPage(){
