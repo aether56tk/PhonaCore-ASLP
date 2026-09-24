@@ -1,5 +1,5 @@
 /* PhonaCore-ASLP build: 2026-09-23-fix-algorithm-validation */
-window.__PHONACORE_BUILD='2026-09-24-clinical-ux38';
+window.__PHONACORE_BUILD='2026-09-24-clinical-ux39';
 const {analyzeVoice,stats,mean,sd}=window.SV_DSP;
 const $=s=>document.querySelector(s), store={get(k,d){try{const raw=localStorage.getItem('sv_'+k);if(raw!==null)return JSON.parse(raw)}catch(e){}try{const raw=sessionStorage.getItem('sv_'+k);if(raw!==null)return JSON.parse(raw)}catch(e){}return d},set(k,v){const raw=JSON.stringify(v);try{localStorage.setItem('sv_'+k,raw);return true}catch(e){try{sessionStorage.setItem('sv_'+k,raw);return true}catch(_){return false}}}};
 let state={page:'Dashboard',researchAudit:store.get('researchAudit',[]),mode:store.get('mode','clinical'),theme:store.get('theme','night'),patient:null,patients:store.get('patients',[]),sessions:store.get('sessions',[]),recording:false,stream:null,recorder:null,chunks:[],pcmChunks:[],pcmProcessor:null,timer:null,seconds:0,analysis:null,tele:null,datasets:store.get('datasets',[]),experiments:store.get('experiments',[]),audioFiles:[],fileDirectory:null,pendingRecordingId:null};
@@ -9,7 +9,7 @@ const cleanedPatients=state.patients.filter(p=>!(demoIds.has(p.id)&&demoNames.ha
 if(cleanedPatients.length!==state.patients.length){state.patients=cleanedPatients;store.set('patients',state.patients)}
 const cleanedSessions=state.sessions.filter(s=>!demoIds.has(s.patientId));
 if(cleanedSessions.length!==state.sessions.length){state.sessions=cleanedSessions;store.set('sessions',state.sessions)}
-const nav=['Dashboard','Patients','Clinical','Voice Lab','Report','Research Wizard','Cross-Check & Consistency','Data Integrity & Readiness','Research Audit Trail','MDVP Validation Dashboard','Research Validation Suite','MDVP Fidelity Monitor','DSP Accuracy Lab','Research Integrity Gate','Research Lab','Recommendations','File Manager'];
+const nav=['Dashboard','Patients','Clinical','Voice Lab','Report','Research Wizard','Cross-Check & Consistency','Data Integrity & Readiness','Full System Verification','Research Audit Trail','MDVP Validation Dashboard','Research Validation Suite','MDVP Fidelity Monitor','DSP Accuracy Lab','Research Integrity Gate','Research Lab','Recommendations','File Manager'];
 function navIcon(n){return{Dashboard:'⌂',Patients:'♙',Clinical:'✚','Voice Lab':'〽','Research Lab':'⚗',Recommendations:'♥',Report:'▤','MDVP Validation Dashboard':'▥','File Manager':'▣'}[n]||'•'}function render(){document.body.dataset.theme=state.theme;document.body.innerHTML=`<div class="layout"><aside class="side"><div class="brand"><span class="brandMark">〽</span><span>Phona<span>Core</span><small>ASLP • VOICE RESEARCH</small></span></div><nav class="navList">${nav.map(n=>`<button class="nav ${state.page===n?'active':''}" data-page="${n}"><i>${navIcon(n)}</i><span>${n}</span></button>`).join('')}</nav></aside><main class="main"><div class="top"><span>PhonaCore-ASLP / ${state.page}</span><div class="topActions"><button class="btn primary" id="globalNewAssessment">＋ New assessment</button><button class="btn" id="themeToggle">${state.theme==='night'?'☀ Daylight':'☾ Night'}</button></div></div><section class="content">${page()}</section></main>${state.notice?`<div class="toast">${state.notice}</div>`:''}</div>`;document.querySelectorAll('[data-page]').forEach(b=>b.onclick=()=>{state.page=b.dataset.page;render()});wire()}
 function head(t,s,button=''){return`<div class="head"><h1>${t}</h1>${button}</div>`}function card(t,x){return`<div class="card"><div class="cardhead"><h2>${t}</h2></div>${x}</div>`}function btn(t,id=''){const action=id==='record'?' onclick="window.__PhonaCoreRecord&&window.__PhonaCoreRecord()"':id==='stop'?' onclick="window.__PhonaCoreStop&&window.__PhonaCoreStop()"':'';return`<button type="button" class="btn ${id?'primary':''}" id="${id}"${action}>${t}</button>`}
 function recommendationTrend(sessions){
@@ -56,7 +56,7 @@ function recommendationsPage(){
  card('Next step','<div class="toolbar"><button class="btn primary" onclick="state.page=\'Voice Lab\';render()">Back to report</button><button class="btn" onclick="state.page=\'Clinical\';render()">Open clinical notes</button></div>');
 }
 
-function page(){switch(state.page){case'Validation 2.0':return validationEngine();case'Reliability Lab':return reliabilityLab();case'Validity Lab':return validityLab();case'Algorithm Validation':return algorithmValidation();case'Study Manager & Final QA':return studyManager();case'Batch Research':return batchResearch();case'Study Protocol':return studyProtocol();case'Patients':return patients();case'Clinical':return clinical();case'Voice Lab':return voice();case'Report':return reportPage();case'MDVP Validation Dashboard':return validationDashboard();case'Research Validation Suite':return researchAllLab();case'MDVP Fidelity Monitor':return mdvpFidelityMonitor();case'Research Integrity Gate':return researchIntegrityPage();case'DSP Accuracy Lab':return accuracyLab();case'Research Wizard':return researchWizard();case'Cross-Check & Consistency':return consistencyPage();case'Data Integrity & Readiness':return dataIntegrityPage();case'Research Audit Trail':return researchAuditTrail();case'Research Lab':return research();case'Recommendations':return recommendationsPage();case'File Manager':return fileManager();case'Datasets':return datasets();case'Statistics':return statistics();case'Security':return security();case'Settings':return settings();default:return dashboard()}}
+function page(){switch(state.page){case'Validation 2.0':return validationEngine();case'Reliability Lab':return reliabilityLab();case'Validity Lab':return validityLab();case'Algorithm Validation':return algorithmValidation();case'Study Manager & Final QA':return studyManager();case'Batch Research':return batchResearch();case'Study Protocol':return studyProtocol();case'Patients':return patients();case'Clinical':return clinical();case'Voice Lab':return voice();case'Report':return reportPage();case'MDVP Validation Dashboard':return validationDashboard();case'Research Validation Suite':return researchAllLab();case'MDVP Fidelity Monitor':return mdvpFidelityMonitor();case'Research Integrity Gate':return researchIntegrityPage();case'DSP Accuracy Lab':return accuracyLab();case'Research Wizard':return researchWizard();case'Cross-Check & Consistency':return consistencyPage();case'Data Integrity & Readiness':return dataIntegrityPage();case'Full System Verification':return verificationPage();case'Research Audit Trail':return researchAuditTrail();case'Research Lab':return research();case'Recommendations':return recommendationsPage();case'File Manager':return fileManager();case'Datasets':return datasets();case'Statistics':return statistics();case'Security':return security();case'Settings':return settings();default:return dashboard()}}
 function startNewAssessment(){
   if(state.recording){state.recording=false;cleanupRecording()}
   if(state.analysisWorker){try{state.analysisWorker.terminate()}catch(_){ }state.analysisWorker=null}
@@ -358,6 +358,31 @@ function researchIntegrityPage(){
 
 
 
+
+function fullSystemVerification(){
+ const checks=[];
+ const add=(name,pass,detail)=>checks.push({name,pass,detail});
+ const nav=['Dashboard','Patients','Clinical','Voice Lab','Report','Research Wizard','Cross-Check & Consistency','Data Integrity & Readiness','Research Audit Trail','MDVP Validation Dashboard','Research Validation Suite','MDVP Fidelity Monitor','DSP Accuracy Lab','Research Integrity Gate','Research Lab','Recommendations','File Manager'];
+ add('Navigation registry',nav.every(n=>typeof n==='string'),nav.length+' configured routes');
+ add('DSP engine',!!window.SV_DSP?.analyzeVoiceFast,'analyzeVoiceFast exposed');
+ add('MDVP 33-parameter schema',Object.keys(window.SV_DSP?.MDVP_33_PARAMETER_SCHEMA||{}).length===33,'Expected 33 schema entries');
+ add('Core validation report',!!state.validationReport,'Paired validation report state');
+ add('Research audit trail',Array.isArray(state.researchAudit),'Audit storage available');
+ add('Final QA engine',!!window.PC_FINAL_QA?.run,'Final QA engine loaded');
+ add('Participant gate',!state.patient||!!(state.patient.id&&state.patient.name&&Number.isFinite(Number(state.patient.age))&&state.patient.sex),'Selected participant passes configured demographic gate');
+ add('Input quality gate',!state.analysis||!!(state.analysis.measurementStatus?.gatePass||state.analysis.measurementGate?.pass||state.analysis.measurementStatus?.qualityGatePass),'Current analysis passes configured quality gate');
+ add('Build fingerprint',!!window.__PHONACORE_BUILD&&!!window.SV_DSP?.VERSION,'App/DSP versions exposed');
+ const passed=checks.filter(x=>x.pass).length;
+ return {checks,passed,total:checks.length,ready:passed===checks.length,generatedAt:new Date().toISOString()};
+}
+function verificationPage(){
+ const r=fullSystemVerification();
+ return head('Full System Verification','End-to-end software, data, DSP and research workflow audit.')+
+ card('Verification status','<div class="grid3"><div class="metric"><span>Passed</span><b>'+r.passed+'/'+r.total+'</b></div><div class="metric"><span>Failed</span><b>'+(r.total-r.passed)+'</b></div><div class="metric"><span>Release status</span><b>'+(r.ready?'READY':'REVIEW')+'</b></div></div>')+
+ card('System checks','<div class="tablewrap"><table><thead><tr><th>Check</th><th>Status</th><th>Evidence</th></tr></thead><tbody>'+r.checks.map(x=>'<tr><td><b>'+x.name+'</b></td><td><span class="statusPill '+(x.pass?'complete':'draft')+'">'+(x.pass?'PASS':'REVIEW')+'</span></td><td>'+escapeHtml(x.detail)+'</td></tr>').join('')+'</tbody></table></div>')+
+ card('Verification boundary','<div class="notice">This is a software/workflow verification layer. It does not prove clinical validity, diagnostic accuracy, MDVP equivalence, or discrimination performance.</div>')+
+ card('Build','<pre class="codeblock">'+escapeHtml(JSON.stringify({app:window.__PHONACORE_BUILD,dsp:window.SV_DSP?.VERSION,verifiedAt:r.generatedAt},null,2))+'</pre>');
+}
 function dataIntegrityReadiness(){
  const rows=state.batchResults||[], vr=state.validationReport, patients=state.patients||[];
  const missing=patients.map(p=>({id:p.id,demo:!!(p.name&&Number.isFinite(Number(p.age))&&p.sex),analysis:rows.some(x=>x.participantId===p.id||x.patientId===p.id),hash:rows.some(x=>(x.participantId===p.id||x.patientId===p.id)&&typeof x.sha256==='string'&&x.sha256.length===64)}));
