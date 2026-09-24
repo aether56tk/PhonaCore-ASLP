@@ -35,3 +35,18 @@
 .onboard{align-content:start;grid-auto-rows:max-content}
 .onboardNotice{align-self:start;height:auto!important;min-height:0!important;max-height:none!important;flex:none!important}
 @media(max-width:900px){.onboard{align-content:start;grid-auto-rows:max-content}.onboardNotice{align-self:start;height:auto!important;min-height:0!important}}
+
+/* Onboarding viewport-fit refinement — keep the shell content-height on narrow screens */
+.onboard{min-height:0!important;height:max-content!important;align-content:start;grid-template-rows:max-content max-content}
+.onboardMain{height:auto;min-height:0}
+.onboardNotice{height:auto!important;min-height:0!important}
+@media(max-width:900px){
+  .onboard{min-height:0!important;height:max-content!important;grid-template-rows:max-content max-content;align-content:start}
+  .onboardMain{height:auto;min-height:0}
+  .onboardVisual{height:auto;min-height:340px}
+}
+@media(max-width:560px){
+  .onboard{min-height:0!important;height:max-content!important;grid-template-rows:max-content max-content}
+  .onboardMain{height:auto;min-height:0}
+  .onboardNotice{margin-bottom:0}
+}
