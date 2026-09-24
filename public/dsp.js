@@ -293,4 +293,19 @@ function taskSpecificMetrics(samples,sr,task='vowel'){const x=removeDC(samples),
 function measurementGate(a){const issues=[],status={},checks={duration:a.durationSec>=2,voicing:a.voicedPct>=30,clipping:a.clippedPct<=1,cycles:(a.periods||[]).length>=3};if(!checks.duration)issues.push('Recording shorter than 2 seconds');if(!checks.voicing)issues.push('Insufficient voiced material');if(!checks.clipping)issues.push('Clipping exceeds 1%');if(!checks.cycles)issues.push('Insufficient reliable voice periods');const core=['f0Mean','f0Min','f0Max','f0Sd','jitaUs','jittPct','rapPct','ppqPct','sppqPct','vf0Pct','shdB','shimPct','apqPct','sapqPct','vamPct','nhr'];for(const k of core)status[k]=checks.voicing&&checks.cycles&&Number.isFinite(a[k])?'valid':Number.isFinite(a[k])?'limited':'unavailable';return{overall:issues.length?'limited':'valid',issues,status}}
 window.SV_DSP={mean,median,sd,rms,peak,removeDC,normalize,hann,frames,autocorrelationF0,medianFilterSeries,pitchTrack,extractPeriods,periodSequenceFeatures,mdvpPerturbation,periodFeatures,amplitudeFeatures,taskSpecificMetrics,measurementGate,analyzeVoice,analyzeVoiceFast,stats};
 })();
-window.SV_DSP=window.SV_DSP||{};window.SV_DSP.MDVP_PARAMETER_SPEC=MDVP_PARAMETER_SPEC;window.SV_DSP.MDVP_33_PARAMETER_SCHEMA=MDVP_33_PARAMETER_SCHEMA;window.SV_DSP.VERSION='2026-09-24-dsp-audit-fix4';
+window.SV_DSP=window.SV_DSP||{};window.SV_DSP.MDVP_PARAMETER_SPEC=MDVP_PARAMETER_SPEC;window.SV_DSP.MDVP_33_PARAMETER_SCHEMA=MDVP_33_PARAMETER_SCHEMA;window.SV_DSP.VERSION='2026-09-24-dsp-accuracy-ux34';
+
+function accuracyGroundTruthSuite(){
+ const cases=[
+  ['Pure sine 100 Hz','F0',100,'Hz','Known periodic signal'],
+  ['Pure sine 200 Hz','F0',200,'Hz','Known periodic signal'],
+  ['Pure sine 220 Hz','F0',220,'Hz','Known periodic signal'],
+  ['Pure sine 440 Hz','F0',440,'Hz','Known periodic signal'],
+  ['Pure sine 500 Hz','F0',500,'Hz','Known periodic signal']
+ ];
+ return {version:'2026-09-24-accuracy-suite',cases,notes:'Synthetic ground-truth tests are algorithm QA checks; they are not MDVP validation.'};
+}
+function validateAccuracyCase(name,observed,expected,tolerance){
+ const error=observed-expected, abs=Math.abs(error), pct=expected?abs/Math.abs(expected)*100:null;
+ return {name,observed,expected,error,absoluteError:abs,errorPercent:pct,tolerance,pass:abs<=tolerance};
+}
