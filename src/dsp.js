@@ -57,7 +57,7 @@ export function periodSequenceFeatures(periods){
  * moving-average value across the full window, then average the
  * absolute relative deviation over valid centers.
  */
-export function mdvpPerturbation(values,window){
+function mdvpPerturbation(values,window){
   if(!Array.isArray(values)||values.length<window||window<3||window%2===0)return null;
   const half=Math.floor(window/2),overall=mean(values),out=[];
   if(!Number.isFinite(overall)||overall===0)return null;
@@ -68,7 +68,7 @@ export function mdvpPerturbation(values,window){
   return out.length?100*mean(out):null;
 }
 
-export { MDVP_PARAMETER_SPEC };
+export { MDVP_PARAMETER_SPEC, mdvpPerturbation, periodFeatures, amplitudeFeatures };
 
 export function periodSeries(input){
   if(!Array.isArray(input))return [];
@@ -161,9 +161,9 @@ export function analyzeVoice(samples,sr){
   return {
     sampleRate:sr,durationSec:duration,f0Mean,f0Median:median(f0s),f0Min,f0Max,f0Sd:sd(f0s),
     pfrSemitones:f0Min&&f0Max?12*Math.log2(f0Max/f0Min):null,
-    jitaUs:periodPf.jitaUs,jitterLocalPct:periodPf.jittPct,jittPct:periodPf.jittPct,rapPct:periodPf.rapPct,ppqPct:periodPf.ppqPct,
-    sppqPct:periodPf.sppqPct,vf0Pct:periodPf.vf0Pct,t0Ms:periodPf.t0Ms,
-    shimmerLocalPct:periodAf.shimPct,shimPct:periodAf.shimPct,shdB:periodAf.shdB,apqPct:periodAf.apqPct,sapqPct:periodAf.sapqPct,vamPct:periodAf.vamPct,
+    jitaUs:pf.jitaUs,jitterLocalPct:pf.jittPct,jittPct:pf.jittPct,rapPct:pf.rapPct,ppqPct:pf.ppqPct,
+    sppqPct:pf.sppqPct,vf0Pct:pf.vf0Pct,t0Ms:pf.t0Ms,
+    shimmerLocalPct:af.shimPct,shimPct:af.shimPct,shdB:af.shdB,apqPct:af.apqPct,sapqPct:af.sapqPct,vamPct:af.vamPct,
     nhr:noise.nhr,vti:noise.vti,spi:noise.spi,cppPrototypeDb:cpp,voicedPct,clippedPct:clipped,
     rmsDb:20*Math.log10(Math.max(r,1e-9)),peakDb:20*Math.log10(Math.max(p,1e-9)),
     quality:{score:quality,label:quality>=80?'Good':quality>=60?'Review':'Poor',issues:[...(clipped>1?['Clipping detected']:[]),...(voicedPct<30?['Low voiced-frame proportion']:[]),...(duration<2?['Short recording']:[])]},
