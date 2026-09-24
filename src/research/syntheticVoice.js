@@ -22,6 +22,7 @@ export function sineVoice({sampleRate=16000,periods=120,baseF0=120,jitterPct=0,a
     pos+=n;
   }
   const f0=periodsSec.map(p=>1/p);
+  const shimmerRatios=[];for(let i=1;i<amps.length;i++)shimmerRatios.push(Math.abs(amps[i]-amps[i-1])/((amps[i]+amps[i-1])/2));
   const theoretical={
     f0Mean:mean(f0),
     f0Sd:sd(f0),
@@ -64,7 +65,7 @@ export function benchmarkSyntheticCase(config={},tolerances={}){
     ['PPQ',expected.ppqPct,measured.ppqPct,tolerances.PPQ??1],
     ['sPPQ',expected.sppqPct,measured.sppqPct,tolerances.sPPQ??1],
     ['vF0',expected.vf0Pct,measured.vf0Pct,tolerances.vF0??1],
-    ['Shim',expected.vamPct,measured.shimPct,tolerances.Shim??3],
+    ['Shim',expected.shimPct,measured.shimPct,tolerances.Shim??3],
     ['APQ',expected.apqPct,measured.apqPct,tolerances.APQ??3],
     ['sAPQ',expected.sapqPct,measured.sapqPct,tolerances.sAPQ??3],
     ['vAm',expected.vamPct,measured.vamPct,tolerances.vAm??3]
