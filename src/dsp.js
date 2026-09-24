@@ -68,7 +68,7 @@ export function mdvpPerturbation(values,window){
   return out.length?100*mean(out):null;
 }
 
-export { MDVP_PARAMETER_SPEC, mdvpPerturbation };
+export { MDVP_PARAMETER_SPEC };
 
 export function periodSeries(input){
   if(!Array.isArray(input))return [];
