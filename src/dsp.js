@@ -59,47 +59,45 @@ export function periodSequenceFeatures(periods){
  */
 export function mdvpPerturbation(values,window){
   if(!Array.isArray(values)||values.length<window||window<3||window%2===0)return null;
-  const half=Math.floor(window/2),out=[];
+  const half=Math.floor(window/2),overall=mean(values),out=[];
+  if(!Number.isFinite(overall)||overall===0)return null;
   for(let i=half;i<values.length-half;i++){
     const w=values.slice(i-half,i+half+1),local=mean(w);
-    if(Number.isFinite(local)&&local!==0&&Number.isFinite(values[i]))out.push(Math.abs(values[i]-local)/Math.abs(local));
+    if(Number.isFinite(local)&&Number.isFinite(values[i]))out.push(Math.abs(values[i]-local)/Math.abs(overall));
   }
   return out.length?100*mean(out):null;
 }
 
-export function periodFeatures(track){
-  const periods=track.filter(x=>x.f0&&x.f0>0).map(x=>1/x.f0);
-  if(periods.length<3)return {periods,jitaUs:null,jittPct:null,rapPct:null,ppqPct:null,sppqPct:null,vf0Pct:null,t0Ms:null};
-  const diffs=[];for(let i=1;i<periods.length;i++)diffs.push(Math.abs(periods[i]-periods[i-1]));
-  const av=mean(periods),f0s=periods.map(p=>1/p);
-  return {
-    periods,
-    jitaUs:mean(diffs)*1e6,
-    jittPct:100*mean(diffs)/av,
-    rapPct:mdvpPerturbation(periods,3),
-    ppqPct:mdvpPerturbation(periods,5),
-    sppqPct:mdvpPerturbation(periods,55),
-    vf0Pct:100*sd(f0s)/mean(f0s),
-    t0Ms:av*1000
-  };
+export { MDVP_PARAMETER_SPEC };
+
+export function periodSeries(input){
+  if(!Array.isArray(input))return [];
+  if(input.length&&Number.isFinite(input[0]?.periodSec)&&Number.isFinite(input[0]?.f0))return input.filter(x=>Number.isFinite(x.periodSec)&&x.periodSec>0&&Number.isFinite(x.f0)&&x.f0>0);
+  return input.filter(x=>x.f0&&x.f0>0).map(x=>({periodSec:1/x.f0,f0:x.f0}));
 }
 
-export function amplitudeFeatures(track){
-  const a=track.filter(x=>x.f0&&x.rms>0).map(x=>x.rms);
-  if(a.length<3)return {shimPct:null,shdB:null,apqPct:null,sapqPct:null,vamPct:null};
-  const ratios=[],db=[];
-  for(let i=1;i<a.length;i++){
-    ratios.push(Math.abs(a[i]-a[i-1])/((a[i]+a[i-1])/2));
-    db.push(Math.abs(20*Math.log10(a[i]/a[i-1])));
-  }
-  return {
-    shimPct:100*mean(ratios),
-    shdB:mean(db),
-    apqPct:mdvpPerturbation(a,11),
-    sapqPct:mdvpPerturbation(a,55),
-    vamPct:100*sd(a)/mean(a)
-  };
+function amplitudeSeries(input){
+  if(!Array.isArray(input))return [];
+  if(input.length&&Number.isFinite(input[0]?.peakToPeak))return input.filter(x=>Number.isFinite(x.peakToPeak)&&x.peakToPeak>0);
+  return input.filter(x=>x.f0&&x.rms>0).map(x=>({peakToPeak:x.rms}));
 }
+
+function periodFeatures(input){
+  const records=periodSeries(input),periods=records.map(x=>x.periodSec);
+  if(periods.length<3)return {periods,jitaUs:null,jittPct:null,rapPct:null,ppqPct:null,sppqPct:null,vf0Pct:null,t0Ms:null};
+  const diffs=[];for(let i=1;i<periods.length;i++)diffs.push(Math.abs(periods[i]-periods[i-1]));
+  const av=mean(periods),f0s=records.map(x=>x.f0);
+  return {periods,jitaUs:mean(diffs)*1e6,jittPct:100*mean(diffs)/av,rapPct:mdvpPerturbation(periods,3),ppqPct:mdvpPerturbation(periods,5),sppqPct:mdvpPerturbation(periods,55),vf0Pct:100*sd(f0s)/mean(f0s),t0Ms:av*1000};
+}
+
+function amplitudeFeatures(input){
+  const records=amplitudeSeries(input),a=records.map(x=>x.peakToPeak);
+  if(a.length<3)return {shimPct:null,shdB:null,apqPct:null,sapqPct:null,vamPct:null};
+  const ratios=[],db=[];for(let i=1;i<a.length;i++){ratios.push(Math.abs(a[i]-a[i-1])/((a[i]+a[i-1])/2));db.push(Math.abs(20*Math.log10(a[i]/a[i-1])))}
+  return {shimPct:100*mean(ratios),shdB:mean(db),apqPct:mdvpPerturbation(a,11),sapqPct:mdvpPerturbation(a,55),vamPct:100*sd(a)/mean(a)};
+}
+
+const MDVP_PARAMETER_SPEC=Object.freeze({RAP:{name:'Relative Average Perturbation',windowPeriods:3,unit:'%',basis:'pitch-period moving average'},PPQ:{name:'Pitch Period Perturbation Quotient',windowPeriods:5,unit:'%',basis:'pitch-period moving average'},sPPQ:{name:'Smoothed Pitch Period Perturbation Quotient',windowPeriods:55,unit:'%',basis:'user-configurable smoothing; factory default 55 periods'},vF0:{name:'Coefficient of Fundamental Frequency Variation',windowPeriods:null,unit:'%',basis:'100 × SD(F0) / mean(F0) across analyzed periods'},APQ:{name:'Amplitude Perturbation Quotient',windowPeriods:11,unit:'%',basis:'peak-to-peak amplitude moving average'},sAPQ:{name:'Smoothed Amplitude Perturbation Quotient',windowPeriods:55,unit:'%',basis:'user-configurable smoothing; factory default 55 periods'},vAm:{name:'Coefficient of Amplitude Variation',windowPeriods:null,unit:'%',basis:'100 × SD(peak-to-peak amplitude) / mean(peak-to-peak amplitude)'}});
 
 function spectralNoise(samples,sr,f0){
   const n=Math.min(4096,samples.length);if(n<512||!f0)return{nhr:null,vti:null,spi:null};
