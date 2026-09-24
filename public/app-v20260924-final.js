@@ -1,0 +1,819 @@
+/* PhonaCore-ASLP build: 2026-09-23-fix-algorithm-validation */
+window.__PHONACORE_BUILD='2026-09-24-role-ui-ux41';
+const {analyzeVoice,stats,mean,sd}=window.SV_DSP;
+const $=s=>document.querySelector(s), store={get(k,d){try{const raw=localStorage.getItem('sv_'+k);if(raw!==null)return JSON.parse(raw)}catch(e){}try{const raw=sessionStorage.getItem('sv_'+k);if(raw!==null)return JSON.parse(raw)}catch(e){}return d},set(k,v){const raw=JSON.stringify(v);try{localStorage.setItem('sv_'+k,raw);return true}catch(e){try{sessionStorage.setItem('sv_'+k,raw);return true}catch(_){return false}}}};
+let state={page:store.get('role')?'Dashboard':'Role Selection',role:store.get('role',null),researchAudit:store.get('researchAudit',[]),mode:store.get('mode','clinical'),theme:store.get('theme','night'),patient:null,patients:store.get('patients',[]),sessions:store.get('sessions',[]),recording:false,stream:null,recorder:null,chunks:[],pcmChunks:[],pcmProcessor:null,timer:null,seconds:0,analysis:null,tele:null,datasets:store.get('datasets',[]),experiments:store.get('experiments',[]),audioFiles:[],fileDirectory:null,pendingRecordingId:null};
+const demoIds=new Set(['P-001','P-002','P-003']);
+const demoNames=new Set(['Patient Alpha','Patient Beta','Patient Gamma']);
+const cleanedPatients=state.patients.filter(p=>!(demoIds.has(p.id)&&demoNames.has(p.name)));
+if(cleanedPatients.length!==state.patients.length){state.patients=cleanedPatients;store.set('patients',state.patients)}
+const cleanedSessions=state.sessions.filter(s=>!demoIds.has(s.patientId));
+if(cleanedSessions.length!==state.sessions.length){state.sessions=cleanedSessions;store.set('sessions',state.sessions)}
+function roleNav(){if(state.role==='patient')return ['Demographics','Voice Lab','Report','Recommendations','Voice Hygiene'];if(state.role==='clinician')return ['Dashboard','Patient Assessment','Voice Lab','Report','Recommendations','Research Console'];return []}
+const nav=roleNav();
+function navIcon(n){return{Dashboard:'⌂',Patients:'♙',Clinical:'✚','Voice Lab':'〽','Research Lab':'⚗',Recommendations:'♥',Report:'▤','MDVP Validation Dashboard':'▥','File Manager':'▣'}[n]||'•'}function render(){document.body.dataset.theme=state.theme;document.body.innerHTML=`<div class="layout"><aside class="side"><div class="brand"><span class="brandMark">〽</span><span>Phona<span>Core</span><small>ASLP • VOICE RESEARCH</small></span></div><nav class="navList">${nav.map(n=>`<button class="nav ${state.page===n?'active':''}" data-page="${n}"><i>${navIcon(n)}</i><span>${n}</span></button>`).join('')}</nav>${state.role?'<button class="btn roleSwitch" id="switchRole">⇄ Switch role</button>':''}</aside><main class="main"><div class="top"><span>PhonaCore-ASLP / ${state.page}</span><div class="topActions"><button class="btn primary" id="globalNewAssessment">＋ New assessment</button><button class="btn" id="themeToggle">${state.theme==='night'?'☀ Daylight':'☾ Night'}</button></div></div><section class="content">${page()}</section></main>${state.notice?`<div class="toast">${state.notice}</div>`:''}</div>`;document.querySelectorAll('[data-page]').forEach(b=>b.onclick=()=>{state.page=b.dataset.page;render()});wire()}
+function head(t,s,button=''){return`<div class="head"><h1>${t}</h1>${button}</div>`}function card(t,x){return`<div class="card"><div class="cardhead"><h2>${t}</h2></div>${x}</div>`}function btn(t,id=''){const action=id==='record'?' onclick="window.__PhonaCoreRecord&&window.__PhonaCoreRecord()"':id==='stop'?' onclick="window.__PhonaCoreStop&&window.__PhonaCoreStop()"':'';return`<button type="button" class="btn ${id?'primary':''}" id="${id}"${action}>${t}</button>`}
+function recommendationTrend(sessions){
+ const rows=sessions.slice(0,8).reverse();
+ if(rows.length<2)return '<div class="empty compact">Save at least two completed assessments for this participant to see progress.</div>';
+ const defs=[['Jitt','jittPct','%'],['Shim','shimPct','%'],['NHR','nhr','ratio'],['F0','f0Mean','Hz']];
+ const W=760,H=250,pad=42;
+ return '<div class="trendGrid">'+defs.map(d=>{const vals=rows.map(s=>Number(s.m?.[d[1]])).filter(Number.isFinite);if(vals.length<2)return '<div class="empty compact">'+d[0]+' trend unavailable.</div>';const min=Math.min(...vals),max=Math.max(...vals),span=max-min||1;const pts=rows.map((s,i)=>{const v=Number(s.m?.[d[1]]);if(!Number.isFinite(v))return null;return (pad+i*(W-2*pad)/Math.max(1,rows.length-1))+','+(H-pad-(v-min)/span*(H-2*pad))}).filter(Boolean).join(' ');return '<div class="trendCard"><div class="trendTitle"><b>'+d[0]+'</b><small>'+d[2]+'</small></div><svg viewBox="0 0 '+W+' '+H+'" aria-label="'+d[0]+' longitudinal trend"><line x1="'+pad+'" y1="'+(H-pad)+'" x2="'+(W-pad)+'" y2="'+(H-pad)+'" stroke="currentColor" opacity=".18"/><polyline fill="none" stroke="currentColor" stroke-width="3" points="'+pts+'"/>'+rows.map((s,i)=>{const v=Number(s.m?.[d[1]]);if(!Number.isFinite(v))return '';return '<circle cx="'+(pad+i*(W-2*pad)/Math.max(1,rows.length-1))+'" cy="'+(H-pad-(v-min)/span*(H-2*pad))+'" r="4" fill="currentColor"/>'}).join('')+'</svg><div class="small">Latest: '+f(vals[vals.length-1])+' '+d[2]+'</div></div>'}).join('')+'</div>';
+}
+function downsampleWaveform(x,n=1800){if(!x||!x.length)return[];const out=new Array(Math.min(n,x.length));const step=x.length/out.length;for(let i=0;i<out.length;i++){const at=Math.floor(i*step),to=Math.max(at+1,Math.floor((i+1)*step));let s=0,c=0;for(let j=at;j<to&&j<x.length;j++){s+=x[j];c++}out[i]=s/(c||1)}return out}
+function analysisFingerprint(m,s){
+ const rm=m?.recordingMeta||{};return {assessment_id:s?.id||'CURRENT',participant_id:s?.patientId||state.patient?.id||'—',timestamp:s?.createdAt||new Date().toISOString(),task:m?.task||s?.task||'—',sample_rate_hz:rm.sampleRate||'—',channels:rm.channels||1,duration_sec:m?.durationSec??rm.duration??'—',analysis_segment_sec:m?.researchParameters?.Tsam??'—',app_build:'2026-09-24-clinical-ux27',dsp_build:'2026-09-24-dsp-audit-fix4',mode:state.mode}};
+function reportPage(){
+ const s=state.analysis?{id:state.pendingRecordingId||'CURRENT',patientId:state.patient?.id,task:state.voiceTask,createdAt:new Date().toISOString(),m:state.analysis}:state.sessions.filter(x=>x.patientId===state.patient?.id&&x.status==='completed').sort((a,b)=>new Date(b.createdAt||0)-new Date(a.createdAt||0))[0];
+ const p=state.patient||state.patients.find(x=>x.id===s?.patientId),h=store.get('history_'+(p?.id||''),{}),m=s?.m;
+ if(!s||!m)return head('Clinical Report','Complete or save an assessment first.')+card('No report available','<div class="empty">Record and analyze a voice sample, then return here.</div>');
+ const fp=analysisFingerprint(m,s);
+ return head('Clinical Report','Structured report separated from patient recommendations.', '<span class="tag">'+state.mode.toUpperCase()+' MODE</span>')+
+ card('1 · Patient & assessment','<div class="metaGrid"><div><b>Participant</b><span>'+ (p?.name||'—')+'</span></div><div><b>ID</b><span>'+ (p?.id||'—')+'</span></div><div><b>Occupation</b><span>'+ (h.occupation||'Not documented')+'</span></div><div><b>Assessment</b><span>'+s.id+'</span></div><div><b>Date</b><span>'+new Date(s.createdAt||Date.now()).toLocaleString()+'</span></div><div><b>Task</b><span>'+ (s.task||m.task||'—')+'</span></div></div>')+
+ card('2 · Signal quality & acquisition',signalQualityPanel(m)+ '<div class="notice">Review signal-quality flags before clinical or research interpretation.</div>')+
+ card('3 · Acoustic measurements',parameterTable(m))+
+ card('4 · Signal visualization','<h3>F0 contour</h3><div class="chart">'+line((m.pitchTrack||[]).filter(x=>x.f0).map(x=>x.f0))+'</div><h3>Waveform preview</h3><div class="chart">'+(m.waveformPreview?.length?'<svg viewBox="0 0 800 220" preserveAspectRatio="none">'+(()=>{const v=m.waveformPreview,max=Math.max(...v.map(Math.abs))||1;return '<polyline fill="none" stroke="currentColor" stroke-width="1.5" points="'+v.map((x,i)=>(i/(v.length-1||1)*800)+','+(110-x/max*95)).join(' ')+'"/>'})()+'</svg>':'<div class="empty">Waveform preview was not retained for this assessment.</div>')+'</div><p class="small">A true spectrogram is shown only when raw signal frames are retained; PhonaCore does not substitute a synthetic image for missing signal data.</p>')+
+ card('5 · Voice profile',radialProfile(m))+
+ card('6 · Research fingerprint','<pre class="fingerprint">'+JSON.stringify(fp,null,2).replace(/</g,'&lt;')+'</pre>')+
+ card('Next step','<div class="toolbar"><button class="btn primary" onclick="state.page=\'Recommendations\';render()">Open recommendations →</button><button class="btn" onclick="state.mode=state.mode===\'clinical\'?\'research\':\'clinical\';store.set(\'mode\',state.mode);render()">Switch to '+(state.mode==='clinical'?'Research':'Clinical')+' mode</button><button class="btn" onclick="window.print()">Print report</button><button class="btn" onclick="state.page=\'Measurement Documentation\';render()">Measurement documentation</button></div>');
+}
+function recommendationsPage(){
+ const p=state.patient||{},h=store.get('history_'+p.id,{}),occupation=h.occupation||'Not documented',profile=hygieneProfiles[occupationHygieneKey(h.occupation)]||hygieneProfiles.General;
+ const current=state.analysis||[...state.sessions].filter(s=>s.patientId===p.id&&s.status==='completed').sort((a,b)=>new Date(b.createdAt||0)-new Date(a.createdAt||0))[0]?.m;
+ const sList=[...state.sessions].filter(s=>s.patientId===p.id&&s.status==='completed').sort((a,b)=>new Date(a.createdAt||0)-new Date(b.createdAt||0));
+ const flags=[]; if(current){const checks=[['Jitt','jittPct',1.040,'Consider reducing prolonged/high-effort voice use and monitor across visits.'],['RAP','rapPct',0.680,'Use comfortable voice production and avoid pushing the voice.'],['PPQ','ppqPct',0.840,'Use comfortable pitch/loudness and monitor changes over time.'],['ShdB','shdB',0.350,'Maintain hydration and avoid excessive vocal effort.'],['Shim','shimPct',3.810,'Maintain hydration and use regular voice breaks.'],['APQ','apqPct',3.070,'Use efficient voice production and avoid prolonged strain.'],['NHR','nhr',0.190,'Reduce background noise and avoid shouting to overcome noise.'],['VTI','vti',0.061,'Reduce situations requiring forceful voice projection.'],['SPI','spi',14.120,'Use comfortable loudness and monitor the measure longitudinally.'],['vF0','vf0Pct',1.100,'Use comfortable pitch and consider monitoring over repeat assessments.'],['vAm','vamPct',8.200,'Use comfortable loudness and regular voice-rest breaks.']]; checks.forEach(x=>{const v=Number(current[x[1]]);if(Number.isFinite(v)&&v>x[2])flags.push({name:x[0],text:x[3],value:v,threshold:x[2]})});const rp=current.researchParameters||{};[['DVB','DVB'],['DSH','DSH'],['DUV','DUV']].forEach(x=>{const v=Number(rp[x[1]]);if(Number.isFinite(v)&&v>0)flags.push({name:x[0],text:'This research parameter is above the supplied zero reference; review the raw result and clinical context rather than treating it as a diagnosis.',value:v,threshold:0})})}
+ const visuals=[
+  ['Hydration','💧','Water & hydration','Regular fluid intake supports everyday voice-care habits.'],
+  ['Voice breaks','⏸️','Planned voice breaks','Pause during prolonged speaking rather than continuously increasing vocal effort.'],
+  ['Healthy speaking','🗣️','Comfortable voice use','Use a comfortable pitch and loudness with relaxed posture.'],
+  ['Noise control','🔇','Reduce background noise','Use environmental control or amplification rather than shouting.'],
+  ['Professional care','🩺','ENT / SLP follow-up','Persistent hoarseness, pain or vocal fatigue should be discussed with an appropriate professional.']
+ ];
+ const recItems=flags.length?flags.map(x=>'<li><b>'+x.name+'</b> — '+x.text+' <small>(measured '+f(x.value)+'; supplied reference '+f(x.threshold)+')</small></li>').join(''):'<li>No current parameter crossed the supplied numeric reference thresholds in this analysis. Continue routine voice-care habits and monitor repeat measurements.</li>';
+ return head('Recommendations','Patient-facing education generated after the voice-analysis report.')+
+ card('Personalized voice-care guidance','<div class="patient"><b>'+profile.title+'</b><small>'+occupation+' • '+profile.focus+'</small></div><div class="notice">The items below are educational prompts based on the recorded measurements and occupation. They are not diagnostic conclusions.</div><ul class="clean">'+recItems+'</ul><h3>Occupation-specific hygiene</h3><ul class="clean">'+profile.items.map(x=>'<li>☐ '+x+'</li>').join('')+'</ul>')+
+ card('Recommended visuals','<div class="grid2">'+visuals.map(v=>'<div class="recommendVisual"><div class="visualIcon">'+v[1]+'</div><div><h3>'+v[0]+'</h3><b>'+v[2]+'</b><p class="small">'+v[3]+'</p></div></div>').join('')+'</div>')+
+ card('Progress across visits','<p class="small">'+(sList.length?'Completed assessments for this participant: '+sList.length+'. Trends are descriptive and should be interpreted with the clinical record.':'No saved assessments for this participant yet.')+'</p>'+recommendationTrend(sList))+
+ card('Next step','<div class="toolbar"><button class="btn primary" onclick="state.page=\'Voice Lab\';render()">Back to report</button><button class="btn" onclick="state.page=\'Clinical\';render()">Open clinical notes</button></div>');
+}
+
+
+function roleSelection(){
+ return head('Welcome to PhonaCore','Choose how you will use the platform.')+
+ card('Select interface','<div class="roleGrid"><button class="roleCard" id="chooseClinician"><span>🩺</span><b>Clinician</b><small>Patient assessment, Voice Lab, reports, recommendations and research tools.</small></button><button class="roleCard" id="choosePatient"><span>🎙️</span><b>Patient / Other User</b><small>Demographics, personal voice analysis, simplified report, recommendations and voice-hygiene testing.</small></button></div>')+
+ card('Important','<div class="notice">The patient-facing result is a voice-screening reference status, not a diagnosis. Persistent voice concerns should be assessed by an appropriate clinician.</div>');
+}
+function patientReportPage(){
+ const m=state.analysis||[...state.sessions].filter(s=>s.patientId===state.patient?.id&&s.status==='completed').sort((a,b)=>new Date(b.createdAt||0)-new Date(a.createdAt||0))[0]?.m;
+ if(!m)return head('Voice Report','Your simplified voice report.')+card('No analysis yet','<div class="empty">Complete a Voice Lab recording first.</div>');
+ const rules=[['Jitt','jittPct',1.040,'%'],['RAP','rapPct',0.680,'%'],['PPQ','ppqPct',0.840,'%'],['sPPQ','sppqPct',1.020,'%'],['vF0','vf0Pct',1.100,'%'],['ShdB','shdB',0.350,'dB'],['Shim','shimPct',3.810,'%'],['APQ','apqPct',3.070,'%'],['sAPQ','sapqPct',4.230,'%'],['vAm','vamPct',8.200,'%'],['NHR','nhr',0.190,'ratio'],['VTI','vti',0.061,'ratio'],['SPI','spi',14.120,'ratio']];
+ const applicable=rules.filter(x=>Number.isFinite(Number(m[x[1]])));
+ const failed=applicable.filter(x=>Number(m[x[1]])>x[2]);
+ const gate=m.measurementStatus?.gate||window.SV_DSP?.measurementGate?.(m);
+ const status=!applicable.length||gate?.overall==='limited'?'REVIEW':failed.length?'FAIL':'PASS';
+ const why='<div class="reportExplain"><b>What are we measuring?</b><p>Voice frequency, cycle-to-cycle frequency variation, amplitude variation and noise-related measures are examined from the recorded voice sample.</p><b>Why?</b><p>These measures provide objective acoustic information about the recorded voice. They should be interpreted together with the recording quality, history and clinical assessment.</p><b>How is PASS/FAIL determined?</b><p>The screen compares applicable measurements with the configured reference thresholds. It is not a diagnosis and the reference values are not universal for every person, recording task or device.</p></div>';
+ return head('Voice Report','Simple patient-facing result.')+
+ card('Overall result','<div class="result '+status.toLowerCase()+'"><span>'+status+'</span><small>'+(status==='PASS'?'All applicable configured reference checks were within threshold.':status==='FAIL'?'One or more configured reference checks were above threshold.':'The recording/data are insufficient for a reliable pass/fail screen.')+'</small></div>')+
+ card('Why this result?',why)+
+ card('Voice analysis summary','<div class="grid3"><div class="metric"><span>F0</span><b>'+f(m.f0Mean)+' Hz</b></div><div class="metric"><span>Jitter</span><b>'+f(m.jittPct)+' %</b></div><div class="metric"><span>Shimmer</span><b>'+f(m.shimPct)+' %</b></div><div class="metric"><span>NHR</span><b>'+f(m.nhr)+'</b></div><div class="metric"><span>Signal quality</span><b>'+f(m.quality?.score)+'</b></div><div class="metric"><span>Measures checked</span><b>'+applicable.length+'</b></div></div>')+
+ card('Measurements outside configured reference',failed.length?'<div class="tablewrap"><table><thead><tr><th>Measure</th><th>Value</th><th>Reference</th></tr></thead><tbody>'+failed.map(x=>'<tr><td>'+x[0]+'</td><td>'+f(Number(m[x[1]]))+' '+x[3]+'</td><td>≤ '+x[2]+' '+x[3]+'</td></tr>').join('')+'</tbody></table></div>':'<div class="empty">None of the applicable configured thresholds were exceeded.</div>');
+}
+function voiceHygienePage(){
+ const items=['Hydration','Regular voice breaks','Avoid shouting / excessive vocal effort','Use comfortable pitch and loudness','Reduce background-noise speaking','Avoid repeated throat clearing','Seek professional assessment for persistent hoarseness, pain or vocal fatigue'];
+ return head('Voice Hygiene','Short self-check for everyday voice-care habits.')+
+ card('Voice-hygiene self-test','<div class="hygieneTest">'+items.map((x,i)=>'<label class="checkRow"><input type="checkbox" class="hygieneCheck" value="'+i+'"> <span>'+x+'</span></label>').join('')+'</div><div class="toolbar"><button class="btn primary" id="scoreHygiene">Calculate score</button></div><div id="hygieneScore"></div>')+
+ card('Important','<div class="notice">This is an educational self-check, not a diagnostic test.</div>');
+}
+function patientDemographics(){
+ const p=state.patient;
+ return head('Demographics','Enter the minimum information needed for your voice assessment.')+
+ card('Your details','<div class="formgrid"><label>Name / display name<input id="pName" value="'+(p?.name||'')+'" placeholder="Name"></label><label>Age<input id="pAge" type="number" min="0" max="120" value="'+(p?.age||'')+'" placeholder="Age"></label><label>Sex<select id="pSex"><option value="">Select</option><option '+(p?.sex==='Female'?'selected':'')+'>Female</option><option '+(p?.sex==='Male'?'selected':'')+'>Male</option><option>Other / not specified</option></select></label></div><div class="toolbar"><button class="btn primary" id="saveSelfProfile">Continue →</button></div>');
+}
+function clinicianPatientAssessment(){return patients();}
+function researchConsole(){
+ return head('Research Console','Advanced research functions remain available to clinicians.')+
+ card('Research tools','<div class="toolbar"><button class="btn" data-page="Pre-Collection Research Gate">Pre-Collection Gate</button><button class="btn" data-page="Research Wizard">Research Wizard</button><button class="btn" data-page="MDVP Validation Dashboard">MDVP Validation</button><button class="btn" data-page="Research Validation Suite">Validation Suite</button><button class="btn" data-page="DSP Accuracy Lab">Accuracy Lab</button><button class="btn" data-page="Research Integrity Gate">Integrity Gate</button><button class="btn" data-page="Data Integrity & Readiness">Data Integrity</button><button class="btn" data-page="Full System Verification">System Verification</button></div>')+
+ card('Collection rule','<div class="notice">Research collection should remain blocked until the pre-collection gate and required documentation are complete.</div>');
+}
+function measurementDocumentation(){
+ const rows=(window.SV_DSP?.MDVP_33_PARAMETER_SCHEMA||[]).map(x=>'<tr><td><b>'+x[0]+'</b></td><td>'+x[1]+'</td><td>'+x[2]+'</td><td>'+x[3]+'</td><td>'+x[4]+'</td></tr>').join('');
+ return head('Measurement Documentation','Study documentation for what is measured, why it is measured, its purpose, justification and configured reference.')+
+ card('Study definition','<div class="docBlock"><h3>Title</h3><p>PhonaCore-ASLP Acoustic Voice Analysis and MDVP-Oriented Validation Study</p><h3>Background</h3><p>PhonaCore analyzes sustained and task-based voice recordings using acoustic measures intended to describe fundamental frequency, frequency perturbation, amplitude perturbation, noise-related characteristics, voice breaks, subharmonics and tremor-related modulation.</p><h3>Aim</h3><p>To document and evaluate the acoustic measurements produced by PhonaCore and establish their analytical behavior before human-data collection and paired reference validation.</p><h3>Objectives</h3><ol><li>Define every measured parameter and unit.</li><li>Document the purpose and interpretation boundary of each measurement.</li><li>Record the configured reference values used by the software.</li><li>Separate prototype measurements from empirically validated equivalence.</li><li>Provide reproducible documentation for analysis and reporting.</li></ol><h3>Purpose</h3><p>The measurements provide objective acoustic descriptors of the recorded voice. They support assessment and longitudinal comparison but should not be interpreted as standalone diagnoses.</p></div>')+
+ card('Parameter registry','<div class="tablewrap"><table><thead><tr><th>Parameter</th><th>What it measures</th><th>Unit</th><th>Purpose / basis</th><th>Configured reference</th></tr></thead><tbody>'+rows+'</tbody></table></div>')+
+ card('Interpretation rule','<div class="notice">Reference values shown here are configuration/reference values for this project. They are not universal clinical normative limits. Any patient-facing PASS/FAIL result must remain labelled as a configured screening/reference comparison and not a diagnosis.</div>')+
+ card('Reference sources','<ul class="clean"><li>KayPENTAX MDVP Model 5105 Issue E manual — parameter naming and analysis framework.</li><li>Peer-reviewed MDVP parameter descriptions — used to document parameter meaning and measurement domains.</li><li>Project-specific paired MDVP validation protocol — used for agreement testing and acceptance criteria.</li></ul>');
+}
+function page(){switch(state.page){case'Role Selection':return roleSelection();case'Demographics':return patientDemographics();case'Patient Assessment':return clinicianPatientAssessment();case'Research Console':return researchConsole();case'Measurement Documentation':return measurementDocumentation();case'Validation 2.0':return validationEngine();case'Reliability Lab':return reliabilityLab();case'Validity Lab':return validityLab();case'Algorithm Validation':return algorithmValidation();case'Study Manager & Final QA':return studyManager();case'Batch Research':return batchResearch();case'Study Protocol':return studyProtocol();case'Patients':return patients();case'Clinical':return clinical();case'Voice Lab':return voice();case'Report':return state.role==='patient'?patientReportPage():reportPage();case'MDVP Validation Dashboard':return validationDashboard();case'Research Validation Suite':return researchAllLab();case'MDVP Fidelity Monitor':return mdvpFidelityMonitor();case'Research Integrity Gate':return researchIntegrityPage();case'DSP Accuracy Lab':return accuracyLab();case'Research Wizard':return researchWizard();case'Cross-Check & Consistency':return consistencyPage();case'Data Integrity & Readiness':return dataIntegrityPage();case'Full System Verification':return verificationPage();case'Pre-Collection Research Gate':return researchPreCollectionPage();case'Research Audit Trail':return researchAuditTrail();case'Research Lab':return research();case'Recommendations':return recommendationsPage();case'Voice Hygiene':return voiceHygienePage();case'File Manager':return fileManager();case'Datasets':return datasets();case'Statistics':return statistics();case'Security':return security();case'Settings':return settings();default:return dashboard()}}
+function startNewAssessment(){
+  if(state.recording){state.recording=false;cleanupRecording()}
+  if(state.analysisWorker){try{state.analysisWorker.terminate()}catch(_){ }state.analysisWorker=null}
+  state.analysis=null;state.seconds=0;state.voiceTask='vowel';
+  state.page=state.role==='patient'?(state.patient?'Voice Lab':'Demographics'):(state.patient?'Clinical':'Patients');
+  state.notice=state.role==='patient'?(state.patient?'Ready for your Voice Lab recording.':'Complete your demographics first.'):(state.patient?'Continue the clinical assessment before recording.':'Create or select a real participant before starting an assessment.');
+  render();
+}
+function dashboard(){const done=state.sessions.filter(s=>s.status==='completed'),q=done.map(s=>s.quality?.score).filter(Number.isFinite),hasPatient=!!state.patient,recent=[...state.sessions].sort((a,b)=>new Date(b.createdAt||0)-new Date(a.createdAt||0)).slice(0,5);const recentRows=recent.length?recent.map((s,i)=>{const p=state.patients.find(x=>x.id===s.patientId);return '<tr><td>'+(i+1)+'</td><td><b>'+(p?.id||s.patientId||'—')+'</b></td><td>'+new Date(s.createdAt||Date.now()).toLocaleDateString()+'</td><td>'+((s.task||'Voice assessment').replace(/^[a-z]/,x=>x.toUpperCase()))+'</td><td><span class="statusPill '+(s.status==='completed'?'complete':'draft')+'">'+(s.status==='completed'?'Completed':'Draft')+'</span></td><td><button class="btn smallBtn" data-open-session="'+s.id+'">Open →</button></td></tr>'}).join(''):'<tr><td colspan="6"><div class="empty compact">No assessments yet. Start by registering a real participant.</div></td></tr>';return '<div class="hero dashboardHero"><div class="heroCopy"><div class="eyebrow">PHONACORE-ASLP</div><h2>Voice assessment workspace</h2><p>Capture standardized voice samples, review acoustic measurements and keep recordings linked to the correct participant.</p><div class="toolbar"><button class="btn primary" id="newA">＋ Start assessment</button>'+(hasPatient?'<button class="btn" id="continueDash">Continue with '+(state.patient.name||state.patient.id)+'</button>':'')+'</div></div><div class="heroArt"><span>Assess</span><span>Analyse</span><span>Advance care</span><div class="waveDecor">〰〰〰〰〰</div></div></div><div class="dashboardStart"><div><span class="dashboardIcon">01</span><div><b>'+(hasPatient?'Participant selected':'No participant selected')+'</b><small>'+(hasPatient?'Continue to the clinical assessment.':'Register a real participant before recording.')+'</small></div></div><div class="dashboardHint">'+(hasPatient?'Ready for the next step.':'Nothing has been recorded yet.')+'</div></div><div class="grid dashboardStats"><div class="stat"><span>Completed sessions</span><b>'+done.length+'</b><small>local records</small></div><div class="stat"><span>Mean quality</span><b>'+(q.length?Math.round(mean(q)):'—')+'</b><small>'+(q.length?'out of 100':'no completed sessions')+'</small></div><div class="stat"><span>Participants</span><b>'+state.patients.length+'</b><small>real registry</small></div><div class="stat"><span>Research samples</span><b>'+state.sessions.length+'</b><small>saved session records</small></div></div><div class="card recentCard"><div class="recentHead"><h2>◷ &nbsp; Recent assessments</h2><button class="linkBtn" data-page="Voice Lab">View all →</button></div><div class="tablewrap"><table class="recentTable"><thead><tr><th>#</th><th>Participant</th><th>Date</th><th>Assessment type</th><th>Status</th><th>Actions</th></tr></thead><tbody>'+recentRows+'</tbody></table></div></div><footer class="dashboardFooter"><span>PhonaCore-ASLP<br><small>Built for better voices. &nbsp;|&nbsp; JSS Institute of Speech and Hearing</small></span><small>v0.1.0</small></footer>'}
+function patients(){
+  const selected=state.patient;
+  const form='<div class="formgrid"><label>Participant / patient ID<input id="pId" placeholder="P001"></label><label>Name / display name<input id="pName" placeholder="Enter real name"></label><label>Age (years)<input id="pAge" type="number" min="0" max="120" placeholder="Age"></label><label>Sex<select id="pSex"><option value="">Select</option><option>Female</option><option>Male</option><option>Intersex</option><option>Prefer not to say</option></select></label></div><div class="toolbar"><button class="btn primary" id="saveParticipant">Save participant</button></div><div class="small">Use only the minimum demographic information required by your approved study or clinical workflow.</div>';
+  const list=state.patients.length?'<div class="patients">'+state.patients.map(p=>'<button class="patient '+(selected?.id===p.id?'selected':'')+'" data-pid="'+p.id+'"><b>'+(p.name||'Unnamed participant')+'</b><span>'+p.id+'</span><small>'+(p.age??'—')+' yrs • '+(p.sex||'—')+'</small></button>').join('')+'</div>':'<div class="empty">No participants yet. Add the real participant before starting an assessment.</div>';
+  const selectedView=selected?'<b>'+(selected.name||'Unnamed participant')+'</b><p class="small">'+selected.id+' • '+(selected.age??'—')+' years • '+(selected.sex||'—')+'</p><div class="toolbar"><button class="btn primary" id="patientAssess">Continue to clinical assessment</button></div>':'<div class="empty">Select a participant to continue.</div>';
+  return head('Patients','Enter real participant information here. PhonaCore never creates sample/fake patients.',btn('＋ New assessment','newA'))+card('Participant details',form)+card('Participant registry',list)+card('Selected participant',selectedView);
+}
+function clinical(){if(!state.patient)return head('Clinical Assessment','A real participant must be selected first.',btn('Go to Patients','goPatients'))+card('Participant required','<div class="empty">Select or create a real participant before entering clinical information.</div>');const p=state.patient;const h=store.get('history_'+p.id,{});return head('Clinical Assessment','Structured case history, symptoms, occupational voice load and clinician observations.')+card('Patient',p?`<b>${p.name}</b><p class="small">${p.id} • ${p.age||'—'} years • ${p.sex||'—'}</p>`:'Select a patient first.')+card('Case history',`<div class="formgrid"><label>Primary voice concern<textarea id="chConcern">${h.concern||''}</textarea></label><label>Onset / duration<textarea id="chOnset">${h.onset||''}</textarea></label><label>Voice-use occupation<input id="chOcc" value="${h.occupation||''}"></label><label>Daily voice load<select id="chLoad"><option>Low</option><option>Moderate</option><option>High</option><option>Very high</option></select></label><label>Relevant medical / ENT history<textarea id="chMedical">${h.medical||''}</textarea></label><label>Previous voice treatment<textarea id="chTreatment">${h.treatment||''}</textarea></label></div>`)+card('Patient-reported symptoms',`<div class="grid2">${['Hoarseness','Roughness','Breathiness','Vocal fatigue','Throat discomfort','Difficulty projecting','Frequent throat clearing','Voice breaks','Pitch change','Pain while speaking'].map(x=>`<label class="patient"><input type="checkbox" class="caseSym" value="${x}" ${(h.symptoms||[]).includes(x)?'checked':''}> ${x}</label>`).join('')}</div>`)+card('Clinician assessment',`<div class="formgrid"><label>Perceptual voice quality<textarea id="chPerceptual">${h.perceptual||''}</textarea></label><label>Resonance / phonation observations<textarea id="chResonance">${h.resonance||''}</textarea></label><label>Clinical impression<textarea id="chImpression">${h.impression||''}</textarea></label><label>Follow-up plan<textarea id="chFollow">${h.follow||''}</textarea></label></div><div class="toolbar"><button class="btn primary" id="saveClinical">Save clinical assessment</button><button class="btn" id="continueVoiceLab">Continue to Voice Lab</button></div><div class="notice">Clinical fields are clinician-entered observations. PhonaCore does not automatically diagnose a voice disorder.</div>`)}
+function assessments(){return head('Assessments','Start structured voice tasks and review completed sessions.',btn('＋ New assessment','newA'))+card('Tasks',`<div class="grid2">${['Sustained vowel','Reading','Counting','Conversation'].map((x,i)=>`<button class="patient" data-task="${i===0?'vowel':i===1?'reading':i===2?'counting':'conversation'}"><b>${x}</b><small>Measurement-oriented recording task</small></button>`).join('')}</div>`)+card('Completed',state.sessions.length?sessionTable():`<div class="empty">No completed sessions.</div>`)}
+function sessionTable(){return`<div class="tablewrap"><table><thead><tr><th>ID</th><th>Patient</th><th>Task</th><th>F₀</th><th>Jitter</th><th>Shimmer</th><th>CPP</th><th>Quality</th></tr></thead><tbody>${state.sessions.map(s=>`<tr><td>${s.id}</td><td>${s.patientId}</td><td>${s.task}</td><td>${f(s.m.f0Mean)} Hz</td><td>${f(s.m.jitterLocalPct)}%</td><td>${f(s.m.shimmerLocalPct)}%</td><td>${f(s.m.cppPrototypeDb)}</td><td>${s.quality.score}/100</td></tr>`).join('')}</tbody></table></div>`}
+function taskGuide(task){const g={vowel:['Sustained /a/','Take a comfortable breath and sustain /a/ at habitual pitch and loudness for 5–10 seconds.'],reading:['Standard reading','Read naturally at comfortable loudness and pitch.'],counting:['Counting','Count 1–20 naturally.'],conversation:['Spontaneous speech','Speak naturally for 20–30 seconds.'],mpt:['Maximum phonation time','Sustain /a/ for as long as comfortably possible without strain.'],pitchrange:['Pitch range','Glide from lowest comfortable pitch to highest comfortable pitch without strain.'],intensity:['Loudness / intensity','Produce soft, habitual and loud voice levels without shouting.']}[task]||[];return card('Task instructions','<b>'+g[0]+'</b><p class="small">'+g[1]+'</p>')}
+function voice(){if(!state.patient)return head('Voice Lab','Select a real participant before recording.',btn('Go to Patients','goPatients'))+card('Participant required','<div class="empty">A voice recording must be linked to a real participant. No sample patient is created automatically.</div>');const a=state.analysis;const task=state.voiceTask||'vowel';const opts=[['vowel','Sustained vowel'],['reading','Reading'],['counting','Counting'],['conversation','Conversation'],['mpt','Maximum phonation time'],['pitchrange','Pitch range'],['intensity','Loudness / intensity']];return head('Voice Lab','Standardized acquisition, quality control and acoustic analysis.', '<span class="tag">'+(state.recording?'RECORDING':'READY')+'</span>')+'<div class="toolbar"><select id="task">'+opts.map(x=>'<option value="'+x[0]+'" '+(task===x[0]?'selected':'')+'>'+x[1]+'</option>').join('')+'</select>'+(state.recording?btn('■ Stop','stop'):btn('● Record','record'))+btn('▣ Reset','reset')+'</div>'+taskGuide(task)+card('Capture','<div class="recording"><div class="timer">'+String(Math.floor(state.seconds/60)).padStart(2,'0')+':'+String(state.seconds%60).padStart(2,'0')+'</div><div style="flex:1"><div class="level"><i id="level"></i></div><div class="small">Mono • echo cancellation OFF • noise suppression OFF • auto gain OFF</div><div id="captureMeta" class="small">'+(state.notice||'Ready for recording.')+'</div></div></div>')+(a?analysisView(a):card('Standardized capture protocol','<ol class="clean"><li>Use a quiet room.</li><li>Keep microphone position stable.</li><li>Use the same device/task for repeat measurements.</li><li>Do not deliberately alter the voice.</li><li>Review quality flags before interpretation.</li></ol>'))}
+function occupationHygieneKey(occupation=''){const o=String(occupation).toLowerCase();if(/teacher|lecturer|professor|school|faculty/.test(o))return'Teacher';if(/lawyer|advocate|attorney|court/.test(o))return'Lawyer';if(/call.?center|call centre|telecall|customer service|bpo/.test(o))return'CallCenter';if(/singer|vocalist|performer|musician/.test(o))return'Singer';if(/speaker|trainer|presenter|anchor|host/.test(o))return'PublicSpeaker';return'General'}const MDVP_RADIAL=[['F0','f0Mean','Hz',150],['Fhi','f0Max','Hz',293],['Flo','f0Min','Hz',257],['STD','f0Sd','Hz',2.115],['Jitt','jittPct','%',1.040],['RAP','rapPct','%',0.680],['PPQ','ppqPct','%',0.840],['sPPQ','sppqPct','%',1.020],['vF0','vf0Pct','%',1.100],['ShdB','shdB','dB',0.350],['Shim','shimPct','%',3.810],['APQ','apqPct','%',3.070],['sAPQ','sapqPct','%',4.230],['vAm','vamPct','%',8.200],['NHR','nhr','ratio',0.190],['VTI','vti','ratio',0.061],['SPI','spi','ratio',14.120],['DVB','dvbPct','%',0],['DSH','dshPct','%',0]];
+function radialProfile(a){
+ const W=620,H=620,cx=310,cy=310,R=210,items=MDVP_RADIAL;
+ const points=items.map((it,i)=>{const v=Number(a[it[1]]),thr=Number(it[3]);let n=Number.isFinite(v)&&thr>0?Math.min(1.5,v/thr):0;const ang=-Math.PI/2+i*2*Math.PI/items.length;return{x:cx+R*n*Math.cos(ang),y:cy+R*n*Math.sin(ang),lx:cx+(R+42)*Math.cos(ang),ly:cy+(R+42)*Math.sin(ang),name:it[0],value:v,thr,n,available:Number.isFinite(v)}}); 
+ const poly=points.map(p=>p.x.toFixed(1)+','+p.y.toFixed(1)).join(' ');
+ const boundary=items.map((_,i)=>{const ang=-Math.PI/2+i*2*Math.PI/items.length;return (cx+R*Math.cos(ang)).toFixed(1)+','+(cy+R*Math.sin(ang)).toFixed(1)}).join(' ');
+ return '<div class="radialWrap"><svg viewBox="0 0 '+W+' '+H+'" role="img" aria-label="19-parameter MDVP-style research profile"><circle cx="'+cx+'" cy="'+cy+'" r="'+R+'" fill="none" stroke="currentColor" opacity=".35"/><circle cx="'+cx+'" cy="'+cy+'" r="'+(R*.66)+'" fill="none" stroke="currentColor" opacity=".12"/><polygon points="'+boundary+'" fill="none" stroke="currentColor" opacity=".28"/><polygon points="'+poly+'" fill="currentColor" fill-opacity=".12" stroke="currentColor" stroke-width="2"/>'+points.map(p=>'<circle cx="'+p.x.toFixed(1)+'" cy="'+p.y.toFixed(1)+'" r="4"/><text x="'+p.lx.toFixed(1)+'" y="'+p.ly.toFixed(1)+'" text-anchor="middle" font-size="12">'+p.name+'</text>').join('')+'<text x="'+cx+'" y="298" text-anchor="middle" font-size="14">MDVP-style</text><text x="'+cx+'" y="318" text-anchor="middle" font-size="12">research profile</text></svg><div class="small">Boundary = 1.0× the supplied reference threshold where a threshold is numeric. This visualization is descriptive/research-only; it is not a diagnostic classification.</div></div>';
+}
+function signalQualityPanel(a){
+ const m=a.measurementStatus||{},issues=m.issues||[],g=m.gate||{};
+ return card('Signal Quality Gate','<div class="grid2"><div class="metric"><span>Measurement gate</span><b>'+(g.status||'—')+'</b><small>'+issues.length+' issue(s)</small></div><div class="metric"><span>Voiced material</span><b>'+f(a.voicedPct)+'%</b><small>current recording</small></div><div class="metric"><span>Clipping</span><b>'+f(a.clippedPct)+'%</b><small>signal saturation</small></div><div class="metric"><span>Pitch periods</span><b>'+f(a.periodCount)+'</b><small>detected cycles</small></div></div>'+(issues.length?'<div class="notice"><b>Review before interpretation:</b><ul class="clean">'+issues.map(x=>'<li>'+x+'</li>').join('')+'</ul></div>':'<div class="notice">No current measurement-gate issues were reported.</div>'));
+}
+function analysisView(a){const p=state.patient||{},h=store.get('history_'+p.id,{}),occupation=h.occupation||'Not documented',profile=hygieneProfiles[occupationHygieneKey(h.occupation)]||hygieneProfiles.General;const pts=(a.pitchTrack||[]).filter(x=>x.f0).map(x=>x.f0);const rows=[['F0 mean',a.f0Mean,'Hz'],['F0 minimum',a.f0Min,'Hz'],['F0 maximum',a.f0Max,'Hz'],['F0 SD',a.f0Sd,'Hz'],['T0',a.t0Ms,'ms'],['Jita',a.jitaUs,'µs'],['Jitt',a.jittPct,'%'],['RAP',a.rapPct,'%'],['PPQ',a.ppqPct,'%'],['sPPQ',a.sppqPct,'%'],['vF0',a.vf0Pct,'%'],['ShdB',a.shdB,'dB'],['Shim',a.shimPct,'%'],['APQ',a.apqPct,'%'],['sAPQ',a.sapqPct,'%'],['vAm',a.vamPct,'%'],['NHR',a.nhr,'ratio'],['VTI',a.vti,'ratio'],['SPI',a.spi,'ratio'],['CPP*',a.cppPrototypeDb,'dB-like']];const rp=a.researchParameters||{};const researchRows=[['PFR',rp.PFR,'semitones'],['DVB',rp.DVB,'%'],['DSH',rp.DSH,'%'],['DUV',rp.DUV,'%'],['NUV',rp.NUV,'count'],['NSH',rp.NSH,'count'],['NVB',rp.NVB,'count'],['FTRI',rp.FTRI,'%'],['ATRI',rp.ATRI,'%'],['Fftr',rp.Fftr,'Hz'],['Fatr',rp.Fatr,'Hz'],['SEG',rp.SEG,'count'],['PER',rp.PER,'count']];return card('Final voice analysis output',`${signalQualityPanel(a)}<div class="patient"><b>Participant</b><small>${p.name||'—'} • ${p.id||'—'} • Occupation: ${occupation}</small></div><div class="metrics">${rows.map(r=>'<div class="metric"><span>'+r[0]+'</span><b>'+f(r[1])+'</b><small>'+r[2]+'</small></div>').join('')}</div><p class="small">Duration ${f(a.durationSec)} s • Voiced ${f(a.voicedPct)}% • Clipping ${f(a.clippedPct)}%</p><div class="chart">${line(pts)}</div><div class="toolbar"><span class="tag">T0 derived from F0: ${f(a.t0Ms)} ms</span><span class="tag">Research parameters: ${Object.values(researchRows).filter(x=>Number.isFinite(x[1])).length}/${researchRows.length} available</span></div><div class="tablewrap"><table><thead><tr><th>Research / MDVP extension</th><th>Value</th><th>Unit</th></tr></thead><tbody>${researchRows.map(r=>'<tr><td>'+r[0]+'</td><td>'+f(r[1])+'</td><td>'+r[2]+'</td></tr>').join('')}</tbody></table></div><div class="notice">${a.quality.issues.length?a.quality.issues.join(' • '):'Audio processed successfully. No basic capture-quality flags detected.'}<br><small>*CPP is a research implementation and requires independent validation before clinical use.</small></div>`)+card('19-parameter voice profile',radialProfile(a))+card('Vocal hygiene & occupation-specific tips',`<div class="patient"><b>${profile.title}</b><small>Occupation entered: ${occupation} • Focus: ${profile.focus}</small></div><ul class="clean">${profile.items.map(x=>'<li>☐ '+x+'</li>').join('')}</ul><div class="notice">These are educational voice-care recommendations based on the recorded occupation. They do not diagnose a voice disorder or replace individualized ENT/SLP advice.</div>`)+card('Final report',`<p class="small">Generate a print-ready A4 report containing the participant details, occupation, clinical summary, acoustic measurements, signal quality and occupation-specific vocal hygiene guidance.</p><div class="toolbar">${btn('Save session','saveSession')}${btn('Export JSON','exportJSON')}${btn('Generate PDF','printFinalReport')}<button class="btn primary" onclick="state.page='Recommendations';render()">Open recommendations →</button></div>`)}
+function line(vals){if(!vals.length)return'<div class="empty">No reliable pitch frames.</div>';const min=Math.min(...vals),max=Math.max(...vals);const pts=vals.map((v,i)=>i/(vals.length-1||1)*800+','+(210-(v-min)/(max-min||1)*190)).join(' ');return'<svg viewBox="0 0 800 220" preserveAspectRatio="none" style="width:100%;height:100%"><polyline fill="none" stroke="currentColor" stroke-width="3" points="'+pts+'"/></svg>'}
+async function startRecord(){
+  try{
+    if(!window.isSecureContext)throw new Error('Microphone access requires HTTPS.');
+    if(!navigator.mediaDevices?.getUserMedia)throw new Error('This browser does not provide microphone access.');
+    const C=window.AudioContext||window.webkitAudioContext;
+    if(!C)throw new Error('Web Audio API is not available.');
+    state.voiceTask=$('#task')?.value||'vowel';
+    let permission='unknown';
+    try{if(navigator.permissions?.query)permission=(await navigator.permissions.query({name:'microphone'})).state}catch(_){}
+    if(permission==='denied')throw new Error('Microphone permission is blocked for this site. Allow Microphone for this site in Chrome settings and reload.');
+    state.notice='Requesting microphone permission…';
+    state.stream=await navigator.mediaDevices.getUserMedia({audio:true});
+    state.audioContext=new C();
+    if(state.audioContext.state==='suspended')await state.audioContext.resume();
+    const src=state.audioContext.createMediaStreamSource(state.stream);
+    state.analyser=state.audioContext.createAnalyser();
+    state.analyser.fftSize=2048;
+    src.connect(state.analyser);
+
+    // Mobile-safe raw PCM capture. Do not use AudioWorklet here: some
+    // embedded/mobile browsers reject external worklet modules even though
+    // microphone access itself works.
+    state.pcmChunks=[];
+    state.recording=true;
+    if(!state.audioContext.createScriptProcessor){
+      state.recording=false;
+      throw new Error('This browser cannot provide raw microphone samples.');
+    }
+    state.pcmProcessor=state.audioContext.createScriptProcessor(4096,1,1);
+    const mute=state.audioContext.createGain();
+    mute.gain.value=0;
+    state.pcmProcessor.onaudioprocess=e=>{
+      if(state.recording)state.pcmChunks.push(new Float32Array(e.inputBuffer.getChannelData(0)));
+    };
+    src.connect(state.pcmProcessor);
+    state.pcmProcessor.connect(mute);
+    mute.connect(state.audioContext.destination);
+    state.notice='Microphone connected. Recording PCM samples…';
+    state.seconds=0;
+    state.notice='Recording… speak naturally.';
+    state.timer=setInterval(updateCapture,1000);
+    render();
+  }catch(e){
+    cleanupRecording();
+    state.recording=false;
+    const name=e?.name||'UnknownError';
+    state.notice=name==='NotAllowedError'
+      ?'Microphone permission was denied or blocked. Allow Microphone for this site and retry.'
+      :name==='NotFoundError'
+      ?'No microphone was detected by the browser.'
+      :name==='NotReadableError'
+      ?'The microphone is busy or cannot be read. Close other apps using the microphone and retry.'
+      :'Microphone error ('+name+'): '+(e?.message||e);
+    render();
+  }
+}
+window.__PhonaCoreRecord=()=>startRecord();
+window.__PhonaCoreStop=()=>{
+  if(!state.recording){state.notice='No active recording.';render();return}
+  state.recording=false;
+  clearInterval(state.timer);state.timer=null;
+  finishPCM();
+};
+async function finishPCM(){
+  try{
+    const chunks=state.pcmChunks||[];
+    const total=chunks.reduce((n,x)=>n+x.length,0);
+    if(!total)throw new Error('The microphone opened but produced no PCM samples.');
+    const pcm=new Float32Array(total);
+    let at=0;for(const x of chunks){pcm.set(x,at);at+=x.length}
+    const sr=state.audioContext?.sampleRate||44100;
+    const task=state.voiceTask||'vowel';
+    const duration=pcm.length/sr;
+    if(!state.patient)throw new Error('No real participant is selected.');
+    const recordingId='PC-'+Date.now().toString(36).toUpperCase();
+    state.pendingRecordingId=recordingId;
+    const wav=pcmToWavBlob(pcm,sr);
+    const fileName=(state.patient.id||'participant')+'_'+recordingId+'_'+task+'.wav';
+    storeAudioFile({id:recordingId,name:fileName,patientId:state.patient.id,task,duration,sampleRate:sr,createdAt:new Date().toISOString(),blob:wav}).then(refreshAudioFiles).catch(e=>console.error('Audio local storage failed',e));
+    // Release the microphone immediately, then perform the CPU-heavy acoustic analysis off the UI thread.
+    cleanupRecording();
+    state.recording=false;
+    state.analysis=null;
+    state.notice='Recording stopped. Analyzing audio…';
+    render();
+    if(typeof Worker==='undefined'){
+      setTimeout(()=>{
+        try{
+          const a=window.SV_DSP.analyzeVoiceFast(pcm,sr,task);
+          a.task=task;
+          a.taskMetrics=window.SV_DSP.taskSpecificMetrics(pcm,sr,task);
+          a.measurementStatus.gate=window.SV_DSP.measurementGate(a);
+          a.recordingMeta={sampleRate:sr,channels:1,duration,codec:'PCM/Web Audio'};
+          a.waveformPreview=downsampleWaveform(pcm);state.analysis=a;state.notice='Recording analyzed successfully.';render();
+        }catch(e){state.notice='Recording analysis failed: '+(e?.message||e);render()}
+      },0);
+      return;
+    }
+    const analyzeFallback=()=>{
+      try{
+        const a=analyzeVoice(pcm,sr);
+        a.task=task;
+        a.taskMetrics=window.SV_DSP.taskSpecificMetrics(pcm,sr,task);
+        a.measurementStatus.gate=window.SV_DSP.measurementGate(a);
+        a.recordingMeta={sampleRate:sr,channels:1,duration,codec:'PCM/Web Audio'};
+        a.waveformPreview=downsampleWaveform(pcm);state.analysis=a;
+        state.notice='Recording analyzed successfully.';
+        render();
+      }catch(e){
+        state.notice='Recording analysis failed: '+(e?.message||e);
+        render();
+      }
+    };
+    const worker=new Worker('./analysis-worker.js?build=20260924-dsp-audit-fix4');
+    state.analysisWorker=worker;
+    let workerFinished=false;
+    const finishWorker=()=>{workerFinished=true;clearTimeout(workerTimeout);worker.terminate();if(state.analysisWorker===worker)state.analysisWorker=null};
+    worker.onmessage=e=>{
+      if(workerFinished)return;
+      const msg=e.data||{};
+      finishWorker();
+      if(!msg.ok){state.notice='Worker analysis failed; retrying locally…';render();setTimeout(analyzeFallback,0);return}
+      state.analysis=msg.analysis;
+      state.notice='Recording analyzed successfully.';
+      render();
+    };
+    worker.onerror=e=>{
+      if(workerFinished)return;
+      finishWorker();
+      state.notice='Analysis worker unavailable; retrying locally…';
+      render();
+      setTimeout(analyzeFallback,0);
+    };
+    const workerTimeout=setTimeout(()=>{
+      if(workerFinished)return;
+      finishWorker();
+      state.notice='Analysis is taking longer than expected; completing locally…';
+      render();
+      setTimeout(analyzeFallback,0);
+    },20000);
+    // Keep a local copy because the worker may fail on some mobile browsers.
+    const workerPcm=pcm.slice();
+    worker.postMessage({buffer:workerPcm.buffer,sr,task,duration},[workerPcm.buffer]);
+  }catch(e){
+    cleanupRecording();
+    state.recording=false;
+    state.notice='Recording analysis failed: '+(e?.message||e);
+    render();
+  }
+}
+function handleAudioFallback(file){if(!file)return;const reader=new FileReader();reader.onload=async()=>{try{const C=window.AudioContext||window.webkitAudioContext;if(!C)throw new Error('Web Audio API unavailable.');const ac=new C();const buf=await ac.decodeAudioData(reader.result);const ch=new Float32Array(buf.getChannelData(0));const task=state.voiceTask||'vowel';state.analysis=analyzeVoice(ch,buf.sampleRate);state.analysis.task=task;state.analysis.taskMetrics=window.SV_DSP.taskSpecificMetrics(ch,buf.sampleRate,task);state.analysis.measurementStatus.gate=window.SV_DSP.measurementGate(state.analysis);state.analysis.recordingMeta={sampleRate:buf.sampleRate,channels:buf.numberOfChannels,duration:buf.duration,source:'mobile audio capture/file'};await ac.close().catch(()=>{});state.recording=false;state.notice='Audio captured and analyzed.';render()}catch(e){state.recording=false;state.notice='Audio analysis failed: '+(e.message||e);render()}};reader.readAsArrayBuffer(file)}
+function offerAudioFallback(){const input=document.createElement('input');input.type='file';input.accept='audio/*';input.setAttribute('capture','user');input.style.display='none';input.onchange=()=>handleAudioFallback(input.files?.[0]);document.body.appendChild(input);input.click();setTimeout(()=>input.remove(),60000)}
+function cleanupRecording(){
+  clearInterval(state.timer);
+  state.timer=null;
+  for(const t of state.stream?.getTracks?.()||[])t.stop();
+  state.stream=null;
+  try{state.pcmProcessor?.disconnect?.()}catch(_){}
+  state.pcmProcessor=null;
+  state.pcmChunks=[];
+  if(state.audioContext?.state!=='closed')state.audioContext?.close?.();
+  state.analyser=null;
+  state.recorder=null;
+}
+function updateCapture(){state.seconds++;const el=$('.timer');if(el)el.textContent=String(Math.floor(state.seconds/60)).padStart(2,'0')+':'+String(state.seconds%60).padStart(2,'0');if(!state.analyser)return;const x=new Uint8Array(state.analyser.fftSize);state.analyser.getByteTimeDomainData(x);let rms=0;for(const v of x){const q=(v-128)/128;rms+=q*q}rms=Math.sqrt(rms/x.length);const el2=$('#level');if(el2)el2.style.width=Math.min(100,Math.round(rms*180))+'%';const m=$('#captureMeta');if(m)m.textContent='Live input level: '+Math.round(rms*100)+'%'}
+async function finishRecord(){
+  try{
+    clearInterval(state.timer);
+    state.timer=null;
+    for(const t of state.stream?.getTracks?.()||[])t.stop();
+    const mime=state.recorder?.mimeType||'audio/webm';
+    const blob=new Blob(state.chunks,{type:mime});
+    if(!blob.size)throw new Error('No audio data was emitted by MediaRecorder. The microphone permission was granted, but this browser did not provide a recording chunk.');
+    const C=window.AudioContext||window.webkitAudioContext;
+    const ac=state.audioContext||new C();
+    const buf=await ac.decodeAudioData(await blob.arrayBuffer());
+    if(!buf.numberOfChannels||!buf.length)throw new Error('The recorded audio could not be decoded.');
+    const ch=new Float32Array(buf.getChannelData(0));
+    state.analysis=analyzeVoice(ch,buf.sampleRate);
+    const task=state.voiceTask||'vowel';
+    state.analysis.task=task;
+    state.analysis.taskMetrics=window.SV_DSP.taskSpecificMetrics(ch,buf.sampleRate,task);
+    state.analysis.measurementStatus.gate=window.SV_DSP.measurementGate(state.analysis);
+    state.analysis.recordingMeta={sampleRate:buf.sampleRate,channels:buf.numberOfChannels,duration:buf.duration,codec:blob.type};
+    state.recording=false;
+    state.stream=null;
+    state.recorder=null;
+    if(state.audioContext&&state.audioContext.state!=='closed')await state.audioContext.close().catch(()=>{});
+    state.audioContext=null;
+    state.analyser=null;
+    state.notice='Recording analyzed successfully.';
+    render();
+  }catch(e){
+    state.recording=false;
+    cleanupRecording();
+    state.notice='Recording analysis failed: '+(e?.message||e);
+    render();
+  }
+}
+const AUDIO_DB='phonacore-audio-v1';
+function openAudioDb(){return new Promise((resolve,reject)=>{if(!('indexedDB' in window))return reject(new Error('IndexedDB is unavailable.'));const req=indexedDB.open(AUDIO_DB,1);req.onupgradeneeded=()=>{const db=req.result;if(!db.objectStoreNames.contains('recordings'))db.createObjectStore('recordings',{keyPath:'id'})};req.onsuccess=()=>resolve(req.result);req.onerror=()=>reject(req.error||new Error('Could not open local audio storage.'))})}
+async function storeAudioFile(record){const db=await openAudioDb();await new Promise((resolve,reject)=>{const tx=db.transaction('recordings','readwrite');tx.objectStore('recordings').put(record);tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error||new Error('Audio storage failed.'))});db.close();try{await navigator.storage?.persist?.()}catch(_){}}
+async function listAudioFiles(){const db=await openAudioDb();const rows=await new Promise((resolve,reject)=>{const req=db.transaction('recordings','readonly').objectStore('recordings').getAll();req.onsuccess=()=>resolve(req.result||[]);req.onerror=()=>reject(req.error)});db.close();return rows.sort((a,b)=>String(b.createdAt).localeCompare(String(a.createdAt)))}
+async function getAudioFile(id){const db=await openAudioDb();const row=await new Promise((resolve,reject)=>{const req=db.transaction('recordings','readonly').objectStore('recordings').get(id);req.onsuccess=()=>resolve(req.result);req.onerror=()=>reject(req.error)});db.close();return row}
+async function deleteAudioFile(id){const db=await openAudioDb();await new Promise((resolve,reject)=>{const tx=db.transaction('recordings','readwrite');tx.objectStore('recordings').delete(id);tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error)});db.close()}
+async function purgeDemoAudio(){try{const db=await openAudioDb();const rows=await new Promise((resolve,reject)=>{const req=db.transaction('recordings','readonly').objectStore('recordings').getAll();req.onsuccess=()=>resolve(req.result||[]);req.onerror=()=>reject(req.error)});const doomed=rows.filter(x=>demoIds.has(x.patientId));if(doomed.length){const tx=db.transaction('recordings','readwrite');for(const x of doomed)tx.objectStore('recordings').delete(x.id);await new Promise(resolve=>{tx.oncomplete=resolve;tx.onerror=tx.onabort=resolve})}db.close()}catch(_){}}
+function pcmToWavBlob(pcm,sr){const dataLength=pcm.length*2,buffer=new ArrayBuffer(44+dataLength),v=new DataView(buffer),write=(o,s)=>{for(let i=0;i<s.length;i++)v.setUint8(o+i,s.charCodeAt(i));};write(0,'RIFF');v.setUint32(4,36+dataLength,true);write(8,'WAVE');write(12,'fmt ');v.setUint32(16,16,true);v.setUint16(20,1,true);v.setUint16(22,1,true);v.setUint32(24,sr,true);v.setUint32(28,sr*2,true);v.setUint16(32,2,true);v.setUint16(34,16,true);write(36,'data');v.setUint32(40,dataLength,true);let o=44;for(let i=0;i<pcm.length;i++,o+=2){const s=Math.max(-1,Math.min(1,pcm[i]));v.setInt16(o,s<0?s*0x8000:s*0x7fff,true)}return new Blob([buffer],{type:'audio/wav'})}
+function downloadBlob(name,blob){const a=document.createElement('a'),u=URL.createObjectURL(blob);a.href=u;a.download=name;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(u),1500)}
+async function saveBlobToFolder(blob,name){if(state.fileDirectory){const h=await state.fileDirectory.getFileHandle(name,{create:true}),w=await h.createWritable();await w.write(blob);await w.close();return 'Saved to selected folder'}if(window.showDirectoryPicker){state.fileDirectory=await window.showDirectoryPicker({mode:'readwrite'});const h=await state.fileDirectory.getFileHandle(name,{create:true}),w=await h.createWritable();await w.write(blob);await w.close();return 'Saved to selected folder'}downloadBlob(name,blob);return 'Downloaded'}
+function renderAudioFiles(){const el=$('#audioFileList');if(!el)return;if(!state.audioFiles.length){el.innerHTML='<div class="empty">No recordings stored yet.</div>';return}el.innerHTML='<div class="tablewrap"><table><thead><tr><th>File</th><th>Participant</th><th>Task</th><th>Duration</th><th>Date</th><th>Actions</th></tr></thead><tbody>'+state.audioFiles.map(x=>'<tr><td>'+x.name+'</td><td>'+x.patientId+'</td><td>'+x.task+'</td><td>'+f(x.duration)+' s</td><td>'+new Date(x.createdAt).toLocaleString()+'</td><td><button class="btn" data-audio-play="'+x.id+'">Play</button> <button class="btn" data-audio-save="'+x.id+'">Save file</button> <button class="btn" data-audio-delete="'+x.id+'">Delete</button></td></tr>').join('')+'</tbody></table></div>'}
+async function refreshAudioFiles(){try{state.audioFiles=await listAudioFiles()}catch(e){state.audioFiles=[]}renderAudioFiles()}
+function saveSession(){if(!state.analysis||!state.patient){state.notice='Select a real participant and complete a recording first.';render();return}const id=state.pendingRecordingId||'PC-'+Date.now().toString(36).toUpperCase();const existing=state.sessions.find(s=>s.id===id);const s={id,patientId:state.patient.id,task:state.voiceTask||'vowel',createdAt:new Date().toISOString(),status:'completed',recordingMeta:state.analysis.recordingMeta,m:state.analysis,quality:state.analysis.quality};if(existing)Object.assign(existing,s);else state.sessions.unshift(s);store.set('sessions',state.sessions);state.notice='Session saved locally';render()}
+function svgWaveform(samples){if(!samples||!samples.length)return'<div class="empty">Waveform unavailable.</div>';const n=Math.min(samples.length,2400),step=Math.max(1,Math.floor(samples.length/n)),pts=[];for(let i=0;i<n;i+=1){let sum=0,c=0;for(let j=i*step;j<Math.min(samples.length,(i+1)*step);j++){sum+=samples[j];c++}const y=110-(sum/(c||1))*90;pts.push((i/(n-1||1)*800)+','+Math.max(10,Math.min(210,y)))}return'<svg viewBox="0 0 800 220" preserveAspectRatio="none" style="width:100%;height:100%"><polyline fill="none" stroke="currentColor" stroke-width="1.5" points="'+pts.join(' ')+'"/></svg>'}
+function reportGraphs(s){const pts=(s.m.pitchTrack||[]).filter(x=>x.f0).map(x=>x.f0);return card('Signal visualization','<h3>F0 contour</h3><div class="chart">'+line(pts)+'</div><h3>Waveform</h3><div class="chart" id="reportWaveform"><div class="empty">Waveform is retained only for the current browser session unless exported by the user.</div></div>')}
+function parameterTable(m){const rows=[['F0 mean','f0Mean','Hz'],['F0 min','f0Min','Hz'],['F0 max','f0Max','Hz'],['F0 SD','f0Sd','Hz'],['T0','t0Ms','ms'],['Jita','jitaUs','µs'],['Jitt','jittPct','%'],['RAP','rapPct','%'],['PPQ','ppqPct','%'],['sPPQ','sppqPct','%'],['vF0','vf0Pct','%'],['ShdB','shdB','dB'],['Shim','shimPct','%'],['APQ','apqPct','%'],['sAPQ','sapqPct','%'],['vAm','vamPct','%'],['NHR','nhr','ratio'],['VTI','vti','ratio'],['SPI','spi','ratio'],['CPP*','cppPrototypeDb','dB-like']];return '<table><thead><tr><th>Parameter</th><th>Value</th><th>Unit</th></tr></thead><tbody>'+rows.map(x=>'<tr><td>'+x[0]+'</td><td>'+f(m[x[1]])+'</td><td>'+x[2]+'</td></tr>').join('')+'</tbody></table>'}
+function printableReport(s,p,h){const w=window.open('','_blank');if(!w)return;const key=occupationHygieneKey(h?.occupation||''),profile=hygieneProfiles[key]||hygieneProfiles.General,m=s?.m||{},rows=[['F0 mean',m.f0Mean,'Hz'],['F0 minimum',m.f0Min,'Hz'],['F0 maximum',m.f0Max,'Hz'],['F0 SD',m.f0Sd,'Hz'],['T0',m.t0Ms,'ms'],['Jita',m.jitaUs,'µs'],['Jitt',m.jittPct,'%'],['RAP',m.rapPct,'%'],['PPQ',m.ppqPct,'%'],['sPPQ',m.sppqPct,'%'],['vF0',m.vf0Pct,'%'],['ShdB',m.shdB,'dB'],['Shim',m.shimPct,'%'],['APQ',m.apqPct,'%'],['sAPQ',m.sapqPct,'%'],['vAm',m.vamPct,'%'],['NHR',m.nhr,'ratio'],['VTI',m.vti,'ratio'],['SPI',m.spi,'ratio'],['CPP*',m.cppPrototypeDb,'dB-like']];const table='<table><thead><tr><th>Parameter</th><th>Value</th><th>Unit</th></tr></thead><tbody>'+rows.map(x=>'<tr><td>'+x[0]+'</td><td>'+f(x[1])+'</td><td>'+x[2]+'</td></tr>').join('')+'</tbody></table>';const tips=profile.items.map(x=>'<li>'+x+'</li>').join('');w.document.write('<!doctype html><html><head><title>PhonaCore-ASLP Final Voice Assessment Report</title><style>@page{size:A4;margin:14mm}body{font-family:Arial,sans-serif;max-width:820px;margin:auto;line-height:1.45;color:#172033;font-size:12px}h1{font-size:22px;margin:0 0 4px}h2{font-size:15px;margin:20px 0 8px;border-bottom:1px solid #d8dee8;padding-bottom:5px}.sub{color:#64748b;margin-bottom:16px}.meta{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:12px 0}.box{border:1px solid #d8dee8;border-radius:8px;padding:9px}.box b{display:block;margin-bottom:3px}.note{padding:10px;background:#f5f7fa;border-left:3px solid #64748b;margin:10px 0}table{width:100%;border-collapse:collapse}th,td{border:1px solid #d8dee8;padding:6px;text-align:left}th{background:#eef2f7}ul{padding-left:20px}li{margin:5px 0}.footer{margin-top:22px;color:#64748b;font-size:9px}@media print{.noPrint{display:none}}</style></head><body><h1>PhonaCore-ASLP</h1><div class="sub">Final Voice Assessment &amp; Acoustic Analysis Report</div><div class="meta"><div class="box"><b>Participant</b>'+(p?.name||'—')+' ('+(p?.id||'—')+')</div><div class="box"><b>Occupation</b>'+(h?.occupation||'Not documented')+'</div><div class="box"><b>Assessment</b>'+s.id+'</div><div class="box"><b>Date</b>'+new Date(s.createdAt).toLocaleString()+'</div><div class="box"><b>Task</b>'+s.task+'</div><div class="box"><b>Sample rate</b>'+(s.recordingMeta?.sampleRate||'—')+' Hz</div></div><h2>Clinical Summary</h2><p><b>Primary concern:</b> '+(h?.concern||'Not documented')+'</p><p><b>Voice load:</b> '+(h?.load||'Not documented')+'</p><p><b>Symptoms:</b> '+((h?.symptoms||[]).join(', ')||'None documented')+'</p><h2>Acoustic Measurements</h2>'+table+'<p><b>Duration:</b> '+f(m.durationSec||s.recordingMeta?.duration)+' s &nbsp; <b>Voiced:</b> '+f(m.voicedPct)+'% &nbsp; <b>Clipping:</b> '+f(m.clippedPct)+'%</p><h2>Signal Quality</h2><p>'+(s.quality?.score??'—')+'/100. '+((s.quality?.issues||[]).join(' • ')||'No basic capture-quality flags detected.')+'</p><h2>Vocal Hygiene &amp; Occupation-Specific Tips</h2><div class="box"><b>'+profile.title+'</b><span>Occupation entered: '+(h?.occupation||'Not documented')+' • Focus: '+profile.focus+'</span></div><ul>'+tips+'</ul><div class="note">These are educational voice-care recommendations based on the recorded occupation. They do not diagnose a voice disorder or replace individualized ENT/SLP advice.</div><h2>Clinical Interpretation</h2><p>'+(h?.perceptual||'Not documented')+'</p><p><b>Follow-up:</b> '+(h?.follow||'Not documented')+'</p><div class="note">Measurements are descriptive research/educational outputs. They do not independently establish a diagnosis, normality, or clinical equivalence with MDVP. CPP is a research implementation requiring independent validation.</div><div class="footer">PhonaCore-ASLP • ASLP Voice Research</div><script>window.onload=()=>setTimeout(()=>window.print(),250)</script></body></html>');w.document.close()}
+function reports(){const s=state.sessions[0],p=state.patients.find(x=>x.id===s?.patientId),h=store.get('history_'+(p?.id||''),{});return head('Reports','Comprehensive clinician-reviewed voice assessment report.')+card('Sessions',state.sessions.length?sessionTable():`<div class="empty">No completed reports.</div>`)+(s?card('Comprehensive report',reportView(s)+clinicalReportSummary(p,h,s)+recommendationView(s)+vocalHygiene()+vocalHealthCenter()):'')}
+function reportView(s){return`<div class="metrics"><div class="metric"><span>F₀</span><b>${f(s.m.f0Mean)}</b><small>Hz</small></div><div class="metric"><span>Jitter</span><b>${f(s.m.jitterLocalPct)}</b><small>%</small></div><div class="metric"><span>Shimmer</span><b>${f(s.m.shimmerLocalPct)}</b><small>%</small></div><div class="metric"><span>CPP*</span><b>${f(s.m.cppPrototypeDb)}</b><small>dB-like</small></div><div class="metric"><span>Quality</span><b>${s.quality.score}</b><small>/100</small></div></div><div class="notice">Measurements are descriptive and are not a diagnosis or a normality decision. Referral suggestions below are clinician-review prompts, not automated diagnoses.</div><button class="btn" data-report="${s.id}">Export report JSON</button>`}
+
+function clinicalReportSummary(p,h,s){return card('Clinical summary',`<div class="grid2"><div class="patient"><b>Patient</b><small>${p?.name||'—'} • ${p?.id||'—'} • ${p?.age||'—'} yrs</small></div><div class="patient"><b>Primary concern</b><small>${h.concern||'Not documented'}</small></div><div class="patient"><b>Occupation / voice load</b><small>${h.occupation||'Not documented'} • ${h.load||'Not documented'}</small></div><div class="patient"><b>Symptoms</b><small>${(h.symptoms||[]).join(', ')||'None documented'}</small></div></div><h3>Clinician observations</h3><p>${h.perceptual||'Not documented'}</p><h3>Follow-up plan</h3><p>${h.follow||'Not documented'}</p>`)}
+
+function recommendationView(s){const issues=s.quality?.issues||[];return card('Clinical referral guidance',`<div class="notice"><b>Clinician review:</b> ${issues.length?issues.join(' • '):'No basic capture-quality flags were detected.'}</div><div class="grid2"><div class="patient"><b>ENT / Otolaryngology</b><small>Consider when persistent hoarseness, pain, breathing difficulty, recurrent voice loss, or other medical/laryngeal concerns are present. Acoustic measurements alone do not establish a laryngeal diagnosis.</small></div><div class="patient"><b>Speech-Language Pathologist / Voice Specialist</b><small>Consider for persistent dysphonia, vocal fatigue, inefficient voice use, or when behavioral voice assessment and therapy may be appropriate.</small></div><div class="patient"><b>Repeat / Follow-up Assessment</b><small>If recording quality was limited or results are inconsistent with the clinical presentation, repeat a standardized recording before interpretation.</small></div><div class="patient"><b>Other Professional Referral</b><small>The clinician may document referral to another appropriate professional based on case history, examination and presenting concerns.</small></div></div>`)}
+
+const hygieneProfiles={General:{title:'General Voice User',focus:'Daily voice care and prevention',items:['Hydrate regularly and spread fluid intake through the day.','Use a comfortable speaking volume; avoid habitual shouting or whispering.','Take short voice-rest breaks during prolonged speaking.','Avoid frequent throat clearing; use a sip of water or gentle swallow instead.','Avoid smoking and minimize exposure to smoke and other irritants.','Use a microphone/amplification when appropriate for prolonged speaking in noise.','Manage sleep, fatigue and environmental dryness because they can affect voice use.','Seek professional assessment for persistent hoarseness or voice-related symptoms.']},Teacher:{title:'Teacher Vocal Hygiene Manual',focus:'Classroom voice load',items:['Use classroom amplification when available for large or noisy rooms.','Face the class and use visual/hand signals instead of repeatedly calling over noise.','Plan short periods of reduced speaking between teaching activities.','Avoid shouting across classrooms, corridors or playgrounds.','Keep water accessible and take regular hydration breaks.','Use comfortable pitch and loudness rather than forcing the voice.','Reduce classroom background noise where practical.','If hoarseness or vocal fatigue persists, seek ENT/SLP assessment.']},Lawyer:{title:'Lawyer / Advocate Vocal Hygiene Manual',focus:'Courtroom and prolonged professional speaking',items:['Use efficient projection rather than shouting to reach the room.','Use the microphone system when available and positioned correctly.','Build brief voice-rest periods into long hearings, consultations and arguments.','Hydrate before and during prolonged speaking.','Avoid repeated throat clearing and forceful voice onset.','Warm up gently before unusually long speaking demands.','Avoid speaking continuously over competing noise when possible.','Persistent voice symptoms warrant professional evaluation.']},CallCenter:{title:'Call-Centre / Telecalling Vocal Hygiene Manual',focus:'High-duration speaking and headset use',items:['Maintain comfortable headset level and microphone distance.','Use a comfortable conversational loudness rather than speaking forcefully.','Take scheduled voice breaks and vary tasks when possible.','Hydrate regularly throughout the shift.','Avoid repeated throat clearing; use water or swallowing instead.','Reduce background noise so less vocal effort is needed.','Use comfortable posture and relaxed breathing during calls.','Persistent hoarseness, pain or vocal fatigue should be professionally assessed.']},Singer:{title:'Singer Vocal Hygiene Manual',focus:'High vocal demand',items:['Hydrate consistently and avoid abrupt increases in vocal load.','Use an appropriate warm-up and cool-down routine guided by a qualified voice professional.','Avoid singing through pain or significant persistent hoarseness.','Schedule recovery periods after demanding performances or rehearsals.','Use appropriate amplification and monitoring rather than excessive vocal force.','Avoid smoking and minimize irritant exposure.','Manage sleep and general fatigue, especially around performances.','Persistent or recurrent symptoms should be evaluated by ENT and an SLP/voice specialist.']},PublicSpeaker:{title:'Public Speaker / Lecturer Vocal Hygiene Manual',focus:'Extended projection and presentation',items:['Use amplification instead of increasing vocal force for large audiences.','Alternate speaking with demonstrations, visuals or audience interaction.','Keep water available and take brief voice breaks.','Avoid prolonged shouting or speaking over noise.','Use a comfortable pitch and loudness throughout the presentation.','Prepare the voice before unusually long speaking sessions.','Manage sleep and fatigue around high-demand speaking days.','Persistent symptoms should be assessed by an appropriate clinician.']}};function vocalHygiene(){return card('Vocal Hygiene Manual',`<div class="toolbar"><label>Occupation / voice-use profile <select id="hygieneProfile">${Object.entries(hygieneProfiles).map(([k,v])=>`<option value="${k}">${v.title}</option>`).join('')}</select></label><button class="btn" id="printHygiene">Print / Save PDF</button></div><div id="hygieneContent"></div><p class="small">Educational prevention guidance. It does not replace individualized medical or SLP advice.</p>`)}
+function vocalHealthCenter(){const symptoms=['Hoarseness / rough voice','Vocal fatigue after speaking','Throat pain or discomfort while speaking','Difficulty speaking or projecting the voice','Breathy or strained voice','Frequent throat clearing or coughing','Sudden change in voice quality or pitch'];const myths=[['Whispering is always better for a sore throat','Whispering can add vocal strain; use a comfortable soft voice and reduce vocal demand.'],['Frequent throat clearing is harmless','Frequent throat clearing can irritate the vocal folds; try swallowing or sipping water instead.'],['Only singers need vocal hygiene','Anyone who regularly relies on their voice can benefit from good vocal hygiene.'],['Hoarseness always means permanent vocal damage','Hoarseness can have different causes; persistent symptoms should be professionally evaluated.'],['Vocal rest always means complete silence','Vocal rest generally means reducing vocal demand and avoiding strain; individualized advice may differ.']];return card('Vocal Health Center',`<div class="grid2"><div class="patient"><b>What is vocal hygiene?</b><small>Practices that help keep the vocal apparatus healthy and fit for voice production.</small></div><div class="patient"><b>What is a voice problem?</b><small>A change in voice that interferes with everyday communication or occupational voice demands may require further evaluation.</small></div></div><h3>Core areas</h3><p class="small">Hydration • healthy vocal diet/lifestyle • posture and alignment • vocal practices • speaking environment</p><h3>Symptom self-check</h3><ul class="clean">${symptoms.map(x=>'<li><label><input type="checkbox" class="vocalSymptom"> '+x+'</label></li>').join('')}</ul><h3>Myths & facts</h3><div class="grid2">${myths.map(m=>'<div class="patient"><b>Myth: '+m[0]+'</b><small>Fact: '+m[1]+'</small></div>').join('')}</div><h3>Daily monitoring</h3><div class="grid2">${['Hydration maintained','Voice breaks taken','Comfortable loudness/pitch used','Background noise minimized','No shouting/screaming','Avoided prolonged continuous speaking','Avoided frequent throat clearing','Healthy meals/lifestyle','Adequate sleep','Appropriate posture/alignment'].map(x=>'<label class="patient"><input type="checkbox" class="dailyVoice"> '+x+'</label>').join('')}</div><div class="toolbar"><button class="btn" id="printHealth">Print / Save PDF</button><button class="btn" id="clearHealth">Clear checklist</button></div><div class="notice">This educational section supports self-care and clinician counselling. It does not diagnose a voice disorder or replace ENT/SLP assessment.</div>`)}
+
+function tele(){return head('Tele-Assessment','Browser session architecture. No server-side patient audio is stored by this build.',btn('＋ New session','newTele'))+(state.tele?card('Session',`<div class="video"><div>CLIENT</div><div>CLINICIAN</div></div><p>Status: <b>${state.tele.status}</b></p><p>Consent: <b>${state.tele.consent?'granted':'pending'}</b></p><div class="toolbar">${!state.tele.consent?btn('Grant consent','consent'):btn(state.tele.status==='active'?'Complete':'Start','teleNext')}</div><div class="notice">WebRTC transport can be DTLS-SRTP, but production identity, signaling, authorization, key management, backend controls and independent security testing are separate requirements.</div>`):card('Ready','Create a tele-assessment session to begin.'))}
+function studyProtocol(){return head('Study Protocol','Standardized recording and reproducibility controls for PhonaCore-ASLP validation.')+card('Standardized acquisition protocol',`<div class="grid2"><div class="patient"><b>Task</b><small>Sustained /a/</small></div><div class="patient"><b>Target duration</b><small>3–5 seconds sustained /a/; analyze stationary 1–3 second middle segment</small></div><div class="patient"><b>Channels</b><small>Mono</small></div><div class="patient"><b>Microphone geometry</b><small>15 cm distance • 45° angle</small></div><div class="patient"><b>Browser processing</b><small>Echo cancellation OFF • noise suppression OFF • auto gain OFF</small></div><div class="patient"><b>Paired analysis</b><small>Use the identical WAV for PhonaCore-ASLP and reference analysis</small></div></div><div class="notice">These settings are a research protocol. Device, room and microphone differences must be documented rather than assumed equivalent.</div>`)+card('Sample manifest',`<div class="grid2"><label>Study ID<input id="studyId" value="PHONACORE-VAL"></label><label>Sample ID<input id="sampleId" placeholder="S001"></label><label>Participant code<input id="participantCode" placeholder="P001"></label><label>Device<input id="studyDevice" placeholder="Phone / laptop / microphone"></label></div><div class="toolbar"><button class="btn primary" id="makeManifest">Create manifest</button><button class="btn" id="exportManifest">Export manifest</button></div><pre id="manifestOut"></pre>`)}
+function reliabilityLab(){return head('Reliability Lab','Test–retest reliability and device/browser condition effects using paired research measurements.')+
+card('Input dataset',`<div class="drop"><p>CSV columns: <code>subject_id</code>, <code>session_id</code>, <code>condition</code>, plus acoustic parameter columns such as <code>f0Mean</code>, <code>jittPct</code>, <code>shimPct</code>, <code>jitaUs</code>.</p><input type="file" id="relFile" accept=".csv,text/csv"><div class="formgrid"><label>Parameter<select id="relParam"><option>f0Mean</option><option>f0Sd</option><option>jitaUs</option><option>jittPct</option><option>rapPct</option><option>ppqPct</option><option>sppqPct</option><option>vf0Pct</option><option>shdB</option><option>shimPct</option><option>apqPct</option><option>sapqPct</option><option>vamPct</option><option>nhr</option><option>cppPrototypeDb</option></select></label><label>Test–retest session 1<input id="relT1" value="T1"></label><label>Test–retest session 2<input id="relT2" value="T2"></label><label>Condition A<input id="relA" value="A"></label><label>Condition B<input id="relB" value="B"></label></div><div class="toolbar"><button class="btn primary" id="runReliability">Analyze reliability</button><button class="btn" id="exportReliability">Export report</button><button class="btn" id="clearReliability">Clear</button></div><div id="relStatus" class="small"></div></div>`)+
+card('Results',`<div id="relResults"><div class="empty">Import a paired CSV and run analysis.</div></div>`)+
+card('Research interpretation boundary','<div class="notice">ICC and agreement statistics describe reproducibility/agreement in the supplied dataset. They do not establish clinical validity, diagnostic thresholds, or equivalence to MDVP.</div>')}
+
+function renderReliabilityReport(report){const r=report.testRetest,c=report.condition;$('#relResults').innerHTML=`<div class="grid2"><div class="metric big"><span>Test–retest N</span><b>${r.n}</b><small>paired subjects</small></div><div class="metric big"><span>ICC(3,1)</span><b>${f(r.icc?.icc31)}</b><small>two-session consistency</small></div><div class="metric big"><span>Condition N</span><b>${c.n}</b><small>paired subjects</small></div><div class="metric big"><span>Condition bias</span><b>${f(c.agreement?.bias)}</b><small>B − A</small></div></div>${card('Test–retest agreement',`<div class="tablewrap"><table><thead><tr><th>N</th><th>ICC(3,1)</th><th>Bias</th><th>MAE</th><th>RMSE</th><th>95% LoA</th></tr></thead><tbody><tr><td>${r.n}</td><td>${f(r.icc?.icc31)}</td><td>${f(r.agreement?.bias)}</td><td>${f(r.agreement?.mae)}</td><td>${f(r.agreement?.rmse)}</td><td>${f(r.agreement?.loa95?.[0])} to ${f(r.agreement?.loa95?.[1])}</td></tr></tbody></table></div>`)}${card('Device / browser condition effect',`<div class="tablewrap"><table><thead><tr><th>N</th><th>Bias (B−A)</th><th>MAE</th><th>RMSE</th><th>95% LoA</th></tr></thead><tbody><tr><td>${c.n}</td><td>${f(c.agreement?.bias)}</td><td>${f(c.agreement?.mae)}</td><td>${f(c.agreement?.rmse)}</td><td>${f(c.agreement?.loa95?.[0])} to ${f(c.agreement?.loa95?.[1])}</td></tr></tbody></table></div>`)}${card('Pairing QA',`<p class="small">Test–retest paired subjects: ${r.pairs.map(x=>x.id).join(', ')||'none'}.</p><p class="small">Condition paired subjects: ${c.pairs.map(x=>x.id).join(', ')||'none'}.</p>`) }`;}
+
+
+
+function accuracyLab(){
+ const suite=window.SV_DSP.accuracyGroundTruthSuite?.()||{cases:[]};
+ return head('DSP Accuracy Lab','Ground-truth and regression testing for the PhonaCore measurement engine.')+
+ card('Ground-truth suite','<div class="notice">Synthetic signals provide known mathematical reference values. Passing these tests demonstrates algorithm QA only; it does not establish agreement with MDVP.</div><div class="tablewrap"><table><thead><tr><th>Test</th><th>Parameter</th><th>Expected</th><th>Unit</th><th>Purpose</th><th>Status</th></tr></thead><tbody>'+suite.cases.map(c=>'<tr><td>'+c[0]+'</td><td>'+c[1]+'</td><td>'+c[2]+'</td><td>'+c[3]+'</td><td>'+c[4]+'</td><td>READY</td></tr>').join('')+'</tbody></table></div>')+
+ card('Accuracy architecture','<div class="grid3"><div class="metric"><span>F0 ground truths</span><b>5</b></div><div class="metric"><span>Regression layer</span><b>READY</b></div><div class="metric"><span>MDVP validation</span><b>SEPARATE</b></div></div>')+
+ card('Accuracy boundary','<div class="notice">Do not apply empirical correction factors unless paired experimental data supports them. The MDVP comparison remains a separate paired-recording validation process.</div>');
+}
+
+function researchIntegrityGate(target){
+ const p=state.patient, demo=!!(p&&p.id&&p.name&&Number.isFinite(Number(p.age))&&Number(p.age)>=0&&Number(p.age)<=120&&p.sex);
+ const input=!!(state.analysis?.measurementStatus?.gatePass||state.analysis?.measurementGate?.pass||state.analysis?.measurementStatus?.qualityGatePass);
+ const validation=!!(state.validationReport?.matched>1||state.algorithmValidation?.overallPass);
+ const checks=[['Participant demographics',demo],['Signal/input quality',input],['Accuracy/validation evidence',validation]];
+ const failed=checks.filter(x=>!x[1]);
+ if(failed.length){state.notice='Research gate blocked: '+failed.map(x=>x[0]).join(', ')+'. Complete required records/checks before continuing.';state.page='Final QA';render();return false}
+ return true;
+}
+function researchIntegrityPage(){
+ const p=state.patient, demo=!!(p&&p.id&&p.name&&Number.isFinite(Number(p.age))&&Number(p.age)>=0&&Number(p.age)<=120&&p.sex);
+ const input=!!(state.analysis?.measurementStatus?.gatePass||state.analysis?.measurementGate?.pass||state.analysis?.measurementStatus?.qualityGatePass);
+ const validation=!!(state.validationReport?.matched>1||state.algorithmValidation?.overallPass);
+ return head('Research Integrity Gate','Required completeness and validation checks before advancing research workflow.')+
+ card('Workflow lock','<div class="notice"><b>Do not proceed with incomplete research records.</b> Complete participant demographics, signal quality and validation evidence before advancing.</div>')+
+ card('Pre-flight checks','<div class="tablewrap"><table><thead><tr><th>Requirement</th><th>Status</th></tr></thead><tbody>'+[['Participant demographics',demo],['Signal/input quality',input],['Accuracy / validation evidence',validation]].map(x=>'<tr><td>'+x[0]+'</td><td><b>'+(x[1]?'PASS':'BLOCKED')+'</b></td></tr>').join('')+'</tbody></table></div>')+
+ card('Participant record','<div class="notice">'+(p?escapeHtml(JSON.stringify({id:p.id,name:p.name,age:p.age,sex:p.sex},null,2)):'No participant selected.')+'</div>');
+}
+
+
+
+
+
+function researchPreCollectionGate(){
+ const req=[
+  ['Participant demographics','participant',()=>!!(state.patient?.id&&state.patient?.name&&Number.isFinite(Number(state.patient?.age))&&state.patient?.sex)],
+  ['Research documentation','protocol',()=>!!state.studyManifest],
+  ['Recording protocol','recording',()=>!!state.analysis?.recordingMetadata],
+  ['Signal quality','quality',()=>!!(state.analysis?.measurementStatus?.gatePass||state.analysis?.measurementStatus?.qualityGatePass||state.analysis?.measurementGate?.pass)],
+  ['MDVP paired-validation design','validation',()=>!!state.validationReport||!!state.validationCache],
+  ['Data integrity','integrity',()=>Array.isArray(state.researchAudit)],
+  ['Final QA engine','qa',()=>!!window.PC_FINAL_QA?.run]
+ ];
+ const rows=req.map(([name,key,fn])=>{let pass=false;try{pass=!!fn()}catch(e){}return{name,key,pass}});
+ const blocked=rows.filter(x=>!x.pass);
+ return {rows,ready:blocked.length===0,blocked};
+}
+function researchPreCollectionPage(){
+ const g=researchPreCollectionGate();
+ return head('Pre-Collection Research Gate','Mandatory checks before participant data collection can begin.')+
+ card('Collection status','<div class="grid3"><div class="metric"><span>Checks passed</span><b>'+g.rows.filter(x=>x.pass).length+'/'+g.rows.length+'</b></div><div class="metric"><span>Blocked</span><b>'+g.blocked.length+'</b></div><div class="metric"><span>Collection</span><b>'+(g.ready?'OPEN':'LOCKED')+'</b></div></div>')+
+ card('Mandatory prerequisites','<div class="tablewrap"><table><thead><tr><th>Requirement</th><th>Status</th><th>Rule</th></tr></thead><tbody>'+g.rows.map(x=>'<tr><td><b>'+x.name+'</b></td><td><span class="statusPill '+(x.pass?'complete':'draft')+'">'+(x.pass?'READY':'BLOCKED')+'</span></td><td>'+(x.pass?'Requirement detected':'Must be completed before collection')+'</td></tr>').join('')+'</tbody></table></div>')+
+ card('Research safety rule','<div class="notice">No participant record should be treated as research-ready until the required protocol, acquisition, quality, validation design, integrity and QA prerequisites are documented. This gate does not establish clinical validity.</div>');
+}
+function fullSystemVerification(){
+ const checks=[];
+ const add=(name,pass,detail)=>checks.push({name,pass,detail});
+ const nav=['Dashboard','Patients','Clinical','Voice Lab','Report','Research Wizard','Cross-Check & Consistency','Data Integrity & Readiness','Research Audit Trail','MDVP Validation Dashboard','Research Validation Suite','MDVP Fidelity Monitor','DSP Accuracy Lab','Research Integrity Gate','Research Lab','Recommendations','File Manager'];
+ add('Navigation registry',nav.every(n=>typeof n==='string'),nav.length+' configured routes');
+ add('DSP engine',!!window.SV_DSP?.analyzeVoiceFast,'analyzeVoiceFast exposed');
+ add('MDVP 33-parameter schema',Object.keys(window.SV_DSP?.MDVP_33_PARAMETER_SCHEMA||{}).length===33,'Expected 33 schema entries');
+ add('Core validation report',!!state.validationReport,'Paired validation report state');
+ add('Research audit trail',Array.isArray(state.researchAudit),'Audit storage available');
+ add('Final QA engine',!!window.PC_FINAL_QA?.run,'Final QA engine loaded');
+ add('Participant gate',!state.patient||!!(state.patient.id&&state.patient.name&&Number.isFinite(Number(state.patient.age))&&state.patient.sex),'Selected participant passes configured demographic gate');
+ add('Input quality gate',!state.analysis||!!(state.analysis.measurementStatus?.gatePass||state.analysis.measurementGate?.pass||state.analysis.measurementStatus?.qualityGatePass),'Current analysis passes configured quality gate');
+ add('Build fingerprint',!!window.__PHONACORE_BUILD&&!!window.SV_DSP?.VERSION,'App/DSP versions exposed');
+ const passed=checks.filter(x=>x.pass).length;
+ return {checks,passed,total:checks.length,ready:passed===checks.length,generatedAt:new Date().toISOString()};
+}
+function verificationPage(){
+ const r=fullSystemVerification();
+ return head('Full System Verification','End-to-end software, data, DSP and research workflow audit.')+
+ card('Verification status','<div class="grid3"><div class="metric"><span>Passed</span><b>'+r.passed+'/'+r.total+'</b></div><div class="metric"><span>Failed</span><b>'+(r.total-r.passed)+'</b></div><div class="metric"><span>Release status</span><b>'+(r.ready?'READY':'REVIEW')+'</b></div></div>')+
+ card('System checks','<div class="tablewrap"><table><thead><tr><th>Check</th><th>Status</th><th>Evidence</th></tr></thead><tbody>'+r.checks.map(x=>'<tr><td><b>'+x.name+'</b></td><td><span class="statusPill '+(x.pass?'complete':'draft')+'">'+(x.pass?'PASS':'REVIEW')+'</span></td><td>'+escapeHtml(x.detail)+'</td></tr>').join('')+'</tbody></table></div>')+
+ card('Verification boundary','<div class="notice">This is a software/workflow verification layer. It does not prove clinical validity, diagnostic accuracy, MDVP equivalence, or discrimination performance.</div>')+
+ card('Build','<pre class="codeblock">'+escapeHtml(JSON.stringify({app:window.__PHONACORE_BUILD,dsp:window.SV_DSP?.VERSION,verifiedAt:r.generatedAt},null,2))+'</pre>');
+}
+function dataIntegrityReadiness(){
+ const rows=state.batchResults||[], vr=state.validationReport, patients=state.patients||[];
+ const missing=patients.map(p=>({id:p.id,demo:!!(p.name&&Number.isFinite(Number(p.age))&&p.sex),analysis:rows.some(x=>x.participantId===p.id||x.patientId===p.id),hash:rows.some(x=>(x.participantId===p.id||x.patientId===p.id)&&typeof x.sha256==='string'&&x.sha256.length===64)}));
+ const checks=[
+  ['Participant registry',patients.length>0],
+  ['Demographic completeness',patients.length>0&&missing.every(x=>x.demo)],
+  ['Dataset records',rows.length>0],
+  ['Unique participant IDs',new Set(patients.map(x=>String(x.id).toLowerCase())).size===patients.length],
+  ['Duplicate validation IDs',!(vr?.duplicates?.length)],
+  ['Paired records',!!(vr?.matched>1)],
+  ['File integrity hashes',rows.length>0&&rows.every(x=>typeof x.sha256==='string'&&x.sha256.length===64)],
+  ['Final QA',!!state.finalQa?.ready]
+ ];
+ const blocking=checks.filter(x=>!x[1]),ready=!blocking.length;
+ return {checks,blocking,ready,missing};
+}
+function dataIntegrityPage(){
+ const r=dataIntegrityReadiness();
+ return head('Research Data Integrity','Dataset completeness, version safety and statistical-readiness gate.')+
+ card('Readiness','<div class="grid3"><div class="metric"><span>Checks</span><b>'+r.checks.filter(x=>x[1]).length+'/'+r.checks.length+'</b></div><div class="metric"><span>Blocking</span><b>'+r.blocking.length+'</b></div><div class="metric"><span>Status</span><b>'+(r.ready?'READY':'BLOCKED')+'</b></div></div>')+
+ card('Integrity matrix','<div class="tablewrap"><table><thead><tr><th>Requirement</th><th>Status</th></tr></thead><tbody>'+r.checks.map(x=>'<tr><td>'+x[0]+'</td><td><b>'+(x[1]?'PASS':'BLOCKED')+'</b></td></tr>').join('')+'</tbody></table></div>')+
+ card('Missing participant evidence','<div class="tablewrap"><table><thead><tr><th>Participant</th><th>Demographics</th><th>Analysis</th><th>SHA-256</th></tr></thead><tbody>'+ (r.missing.length?r.missing.map(x=>'<tr><td>'+escapeHtml(x.id)+'</td><td>'+(x.demo?'✓':'✕')+'</td><td>'+(x.analysis?'✓':'✕')+'</td><td>'+(x.hash?'✓':'✕')+'</td></tr>').join(''):'<tr><td colspan="4">No participants registered.</td></tr>')+'</tbody></table></div>')+
+ card('Statistical readiness boundary','<div class="notice">A READY dataset passes configured integrity checks only. It is not a claim of clinical validity, diagnostic accuracy, discrimination, or MDVP equivalence.</div>');
+}
+function consistencyEngine(){
+ const p=state.patient,a=state.analysis,vr=state.validationReport, sessions=state.sessions||[];
+ const issues=[];
+ const add=(label,detail,sev='REVIEW')=>issues.push({label,detail,sev});
+ if(!p?.id||!p?.name||!Number.isFinite(Number(p?.age))||Number(p.age)<0||Number(p.age)>120||!p?.sex)add('Demographics','Participant ID, name, valid age and sex must be completed.','BLOCK');
+ const dup=(state.patients||[]).filter(x=>String(x.id).toLowerCase()===String(p?.id||'').toLowerCase()).length;if(p?.id&&dup>1)add('Duplicate participant ID','More than one participant record uses this ID.','BLOCK');
+ if(p?.id&&sessions.some(s=>s.patientId&&s.patientId===p.id&&s.participantId&&s.participantId!==p.id))add('Participant/session mismatch','A saved assessment references a different participant ID.','BLOCK');
+ if(a?.sampleRate&&![44100,50000].includes(Number(a.sampleRate)))add('Sample-rate protocol check','Current validation protocol specifies 44.1 or 50 kHz for standardized WAV validation.','REVIEW');
+ if(vr?.duplicates?.length)add('Duplicate validation IDs',String(vr.duplicates.length)+' duplicate paired IDs detected.','BLOCK');
+ if(vr?.matched&&vr?.totalReference&&vr.matched<vr.totalReference)add('Missing paired records',(vr.totalReference-vr.matched)+' reference rows lack a matched PhonaCore record.','BLOCK');
+ if(vr?.rows?.some(x=>x.n<2))add('Insufficient paired observations','One or more parameter results have fewer than 2 paired observations.','REVIEW');
+ if(a&&!a.measurementStatus?.gatePass&&!a.measurementGate?.pass)add('Signal quality','Current analysis does not show a passed measurement-quality gate.','BLOCK');
+ const discrimination=!!(state.discriminationDataset?.length||state.groupLabels?.length);
+ if(!discrimination)add('Discrimination dataset','No labeled multi-group dataset is currently configured; discrimination analysis is BLOCKED.','BLOCK');
+ const ready=issues.every(x=>x.sev!=='BLOCK');
+ return {issues,ready,generatedAt:new Date().toISOString()};
+}
+function consistencyPage(){
+ const r=consistencyEngine();
+ return head('Cross-Check & Consistency','Whole-record integrity checks before research progression.')+
+ card('Overall integrity','<div class="grid3"><div class="metric"><span>Issues</span><b>'+r.issues.length+'</b></div><div class="metric"><span>Blocking</span><b>'+r.issues.filter(x=>x.sev==='BLOCK').length+'</b></div><div class="metric"><span>Status</span><b>'+(r.ready?'READY':'BLOCKED')+'</b></div></div>')+
+ card('Cross-check results','<div class="tablewrap"><table><thead><tr><th>Check</th><th>Severity</th><th>Finding</th></tr></thead><tbody>'+(r.issues.length?r.issues.map(x=>'<tr><td><b>'+x.label+'</b></td><td>'+x.sev+'</td><td>'+escapeHtml(x.detail)+'</td></tr>').join(''):'<tr><td colspan="3">No configured inconsistencies detected.</td></tr>')+'</tbody></table></div>')+
+ card('Research rule','<div class="notice">A clean check means no configured inconsistency was detected. It does not establish clinical validity, diagnostic accuracy, or MDVP equivalence.</div>');
+}
+function researchWizard(){
+ const p=state.patient, a=state.analysis, vr=state.validationReport, qa=state.finalQa;
+ const steps=[
+  ['01','Participant demographics',!!(p&&p.id&&p.name&&Number.isFinite(Number(p.age))&&Number(p.age)>=0&&Number(p.age)<=120&&p.sex),'ID, name, age and sex'],
+  ['02','Research documentation',!!state.studyManifest?.protocolVersion,'Study/protocol metadata'],
+  ['03','Recording acquisition',!!a,'Recording/analysis record'],
+  ['04','Signal quality',!!(a?.measurementStatus?.gatePass||a?.measurementGate?.pass||a?.measurementStatus?.qualityGatePass),'Signal quality gate'],
+  ['05','Acoustic analysis',!!a,'Analysis completed'],
+  ['06','Paired validation',!!(vr?.matched>1),'Paired PhonaCore/MDVP evidence'],
+  ['07','Final QA',!!qa?.ready,'All final QA checks passed']
+ ];
+ const complete=steps.filter(x=>x[2]).length, blocked=steps.filter(x=>!x[2]);
+ return head('Research Data Collection Wizard','Gated research workflow. Incomplete records remain blocked from research-ready status.')+
+ card('Workflow progress','<div class="grid3"><div class="metric"><span>Completed</span><b>'+complete+'/'+steps.length+'</b></div><div class="metric"><span>Blocked</span><b>'+blocked.length+'</b></div><div class="metric"><span>Research status</span><b>'+(blocked.length?'BLOCKED':'RESEARCH READY')+'</b></div></div>')+
+ card('Required workflow','<div class="tablewrap"><table><thead><tr><th>Step</th><th>Requirement</th><th>Status</th><th>Required evidence</th></tr></thead><tbody>'+steps.map(x=>'<tr><td>'+x[0]+'</td><td><b>'+x[1]+'</b></td><td><span class="statusPill '+(x[2]?'complete':'draft')+'">'+(x[2]?'PASS':'BLOCKED')+'</span></td><td>'+x[3]+'</td></tr>').join('')+'</tbody></table></div>')+
+ card('Missing requirements',blocked.length?'<ul>'+blocked.map(x=>'<li><b>'+x[1]+'</b> — '+x[3]+'</li>').join('')+'</ul>':'<div class="notice">All currently configured workflow gates are complete.</div>')+
+ card('Integrity rule','<div class="notice"><b>Do not treat a blocked record as research-ready.</b> Complete the missing participant, protocol, acquisition, signal-quality, validation, or QA evidence first.</div>');
+}
+function researchAuditTrail(){
+ const events=state.researchAudit||[];
+ return head('Research Audit Trail','Chronological record of important research workflow events.')+
+ card('Audit status','<div class="grid2"><div class="metric"><span>Events</span><b>'+events.length+'</b></div><div class="metric"><span>Current build</span><b>'+window.__PHONACORE_BUILD+'</b></div></div>')+
+ card('Event log',events.length?'<div class="tablewrap"><table><thead><tr><th>Time</th><th>Event</th><th>Participant</th><th>Build</th></tr></thead><tbody>'+events.slice().reverse().map(e=>'<tr><td>'+e.time+'</td><td>'+e.event+'</td><td>'+escapeHtml(e.participant||'—')+'</td><td>'+e.build+'</td></tr>').join('')+'</tbody></table></div>':'<div class="empty">No research audit events recorded yet.</div>');
+}
+function auditResearch(event){
+ state.researchAudit=state.researchAudit||[];
+ state.researchAudit.push({time:new Date().toISOString(),event,participant:state.patient?.id||'',build:window.__PHONACORE_BUILD});
+ if(state.researchAudit.length>500)state.researchAudit=state.researchAudit.slice(-500);
+ store.set('researchAudit',state.researchAudit);
+}
+function mdvpFidelityMonitor(){
+ const schema=window.SV_DSP.MDVP_33_PARAMETER_SCHEMA||{}, rows=state.validationReport?.rows||[];
+ const core=['F0','Fhi','Flo','STD','Jita','Jitt','RAP','PPQ','sPPQ','vF0','ShdB','Shim','APQ','sAPQ','vAm','NHR'];
+ const label=n=>core.includes(n)?'CORE 16':'EXTENDED 33';
+ const available=n=>state.analysis?.[n]!=null||state.analysis?.researchParameters?.[n]!=null;
+ return head('MDVP Fidelity Monitor','Transparent implementation and validation status for MDVP-comparable measurements.')+
+ card('Fidelity summary','<div class="grid3"><div class="metric"><span>33-parameter schema</span><b>'+Object.keys(schema).length+'</b></div><div class="metric"><span>Core validation set</span><b>'+core.length+'</b></div><div class="metric"><span>Paired results</span><b>'+rows.length+'</b></div></div>')+
+ card('Parameter fidelity matrix','<div class="tablewrap"><table><thead><tr><th>Parameter</th><th>Group</th><th>Unit</th><th>Current output</th><th>Paired validation</th><th>Fidelity status</th></tr></thead><tbody>'+Object.values(schema).map(x=>{
+ const n=x.name, rr=rows.find(r=>r.parameter===n), av=available(n);
+ const status=rr?.status||'NOT TESTED';
+ const fidelity=av?(rr?'VALIDATION DATA AVAILABLE':'IMPLEMENTED / NOT VALIDATED'):'NOT CURRENTLY EXPOSED';
+ return '<tr><td><b>'+n+'</b></td><td>'+label(n)+'</td><td>'+(x.unit||'—')+'</td><td>'+ (av?'YES':'NO')+'</td><td>'+status+'</td><td>'+fidelity+'</td></tr>';
+ }).join('')+'</tbody></table></div>')+
+ card('Interpretation boundary','<div class="notice"><b>Core 16:</b> the supplied validation methodology prioritizes these 16 parameters for paired cross-platform validation. The remaining MDVP parameters are treated as an extended set and should not be presented as MDVP-equivalent merely because a value is available. Agreement requires paired data from the same recording.</div>')+
+ card('Implementation transparency','<ul><li>Exact MDVP equivalence is not assumed from parameter-name matching.</li><li>Heuristic or derived research measures remain explicitly marked as such.</li><li>PASS means the supplied statistical target was met for the available paired dataset; it is not a clinical or regulatory claim.</li></ul>');
+}
+function researchAllLab(){
+ const vr=state.validationReport, rows=vr?.rows||[];
+ const schema=window.SV_DSP.MDVP_33_PARAMETER_SCHEMA||{};
+ const counts={pass:rows.filter(x=>x.status==='PASS').length,review:rows.filter(x=>x.status==='REVIEW').length,not:rows.filter(x=>!x.status||x.status==='NOT TESTED').length};
+ const audit=Object.values(schema).map(x=>({name:x.name,available:(state.analysis?.[x.name]!=null||state.analysis?.researchParameters?.[x.name]!=null)}));
+ return head('Research Validation Lab','Unified study, paired-data, visualization and reproducibility workspace.')+
+ card('Study overview','<div class="grid3"><div class="metric"><span>Paired records</span><b>'+(vr?.matched??0)+'</b></div><div class="metric"><span>PASS</span><b>'+counts.pass+'</b></div><div class="metric"><span>REVIEW</span><b>'+counts.review+'</b></div></div>')+
+ card('Interactive Bland–Altman','<div class="grid2"><label>Parameter<select id="baParam"><option value="">Select parameter</option>'+rows.map(x=>'<option>'+x.parameter+'</option>').join('')+'</select></label><div id="baPlot" class="chartBox">Select a parameter after running paired validation.</div></div>')+
+ card('Real signal visualization','<div class="notice">The analysis engine must retain raw PCM for a true spectrogram. This panel does not fabricate a spectrogram when raw signal frames are unavailable.</div><div class="chartBox" id="researchSignal">Waveform / spectrogram data will appear when retained PCM is available.</div>')+
+ card('33-parameter audit','<div class="tablewrap"><table><thead><tr><th>Parameter</th><th>Schema</th><th>Current</th><th>Validation</th></tr></thead><tbody>'+audit.map(x=>'<tr><td>'+x.name+'</td><td>✓</td><td>'+ (x.available?'AVAILABLE':'RESEARCH / DERIVED')+'</td><td>'+((rows.find(r=>r.parameter===x.name)||{}).status||'NOT TESTED')+'</td></tr>').join('')+'</tbody></table></div>')+
+ card('Reproducibility manifest','<pre class="codeblock">'+escapeHtml(JSON.stringify({appBuild:window.__PHONACORE_BUILD,dspBuild:window.SV_DSP?.VERSION||'unknown',generatedAt:new Date().toISOString(),pairedRecords:vr?.matched||0},null,2))+'</pre>')+
+ card('Publication export','<button class="btn" id="exportResearchAll">Export validation CSV</button> <button class="btn" onclick="window.print()">Print research report</button><p class="muted">Agreement statistics are research outputs; they do not establish clinical equivalence or regulatory validation.</p></div>');
+}
+function researchValidationSuite(){
+ const vr=state.validationReport, rows=vr?.rows||[];
+ const pass=rows.filter(x=>x.status==='PASS').length, review=rows.filter(x=>x.status==='REVIEW').length;
+ return head('Research Validation Suite','Bland–Altman diagnostics, paired dataset QA and 33-parameter implementation audit.')+
+ card('Study status','<div class="grid3"><div class="metric"><span>Paired records</span><b>'+(vr?.matched??0)+'</b></div><div class="metric"><span>PASS</span><b>'+pass+'</b></div><div class="metric"><span>REVIEW</span><b>'+review+'</b></div></div>')+
+ card('Paired dataset QA','<div class="notice">Validation requires the same WAV recording to generate the PhonaCore and MDVP observations. Missing pairs and duplicate sample IDs should be resolved before interpreting agreement statistics.</div><button class="btn" onclick="navTo('+'\'Research Lab\''+')">Open Research Lab</button>')+
+ card('Bland–Altman data','<div class="tablewrap"><table><thead><tr><th>Parameter</th><th>N</th><th>Bias</th><th>95% LoA low</th><th>95% LoA high</th><th>CCC</th><th>ICC(3,1)</th></tr></thead><tbody>'+
+ (rows.length?rows.map(x=>'<tr><td>'+x.parameter+'</td><td>'+x.n+'</td><td>'+f(x.bias)+'</td><td>'+f(x.loa95?.[0])+'</td><td>'+f(x.loa95?.[1])+'</td><td>'+f(x.ccc)+'</td><td>'+f(x.icc31)+'</td></tr>').join(''):'<tr><td colspan="7">Run paired validation to populate results.</td></tr>')+'</tbody></table></div>')+
+ card('33-parameter implementation audit','<div class="tablewrap"><table><thead><tr><th>Parameter</th><th>Schema</th><th>Current engine</th><th>Validation</th></tr></thead><tbody>'+
+ Object.values(window.SV_DSP.MDVP_33_PARAMETER_SCHEMA||{}).map(x=>'<tr><td><b>'+x.name+'</b></td><td>✓</td><td>'+((state.analysis?.[x.name]!=null||state.analysis?.researchParameters?.[x.name]!=null)?'Available':'Research/derived')+'</td><td>'+((rows.find(r=>r.parameter===x.name))?.status||'NOT TESTED')+'</td></tr>').join('')+'</tbody></table></div>')+
+ card('Research boundary','<div class="notice">This suite reports statistical agreement and implementation status. It does not establish clinical equivalence or regulatory validation.</div>');
+}
+function validationDashboard(){
+ const src=state.validationCache||null;
+ const groups=[['Pitch baseline','F0,Fhi,Flo,STD','CCC > 0.99 • |Bias| < 0.50 Hz'],['Micro-frequency perturbation','Jita,Jitt,RAP,PPQ,sPPQ,vF0','ICC(3,1) > 0.95 • |Bias| < 0.05%'],['Micro-amplitude perturbation','ShdB,Shim,APQ,sAPQ,vAm','ICC(3,1) > 0.92 • |Bias| < 0.05 dB'],['Spectral additive noise','NHR,VTI,SPI','CCC > 0.90 • |Bias| < 0.01'],['Non-linear interruptions','DVB,DSH,DUV,NUV,NSH,NVB','Categorical concordance > 98%']];
+ const rows=src?.report||[];
+ return head('MDVP Validation Dashboard','Paired-data agreement dashboard based on the supplied PhonaCore validation specification.')+
+ card('Validation protocol','<div class="notice"><b>Paired WAV requirement:</b> the same audio recording must be processed by PhonaCore and MDVP. Sequential/separate vocalizations are not treated as equivalent paired observations.</div><div class="grid2"><div class="metric"><span>Reference system</span><b>MDVP</b><small>Model 5105/4500</small></div><div class="metric"><span>Current pairs</span><b>'+(src?.pairedN??'—')+'</b><small>matched sample IDs</small></div></div>')+
+ card('Acceptance criteria','<div class="tablewrap"><table><thead><tr><th>Domain</th><th>Parameters</th><th>Target</th></tr></thead><tbody>'+groups.map(g=>'<tr><td>'+g[0]+'</td><td>'+g[1]+'</td><td>'+g[2]+'</td></tr>').join('')+'</tbody></table></div>')+
+ card('Parameter-level results',rows.length?'<div class="tablewrap"><table><thead><tr><th>Parameter</th><th>N</th><th>CCC</th><th>ICC(3,1)</th><th>Bias</th><th>95% LoA</th><th>Status</th></tr></thead><tbody>'+rows.map(x=>'<tr><td><b>'+x.parameter+'</b></td><td>'+x.n+'</td><td>'+f(x.ccc)+'</td><td>'+f(x.icc31)+'</td><td>'+f(x.bias)+'</td><td>'+f(x.loa95?.[0])+' to '+f(x.loa95?.[1])+'</td><td><span class="statusPill '+(x.status==='PASS'?'complete':x.status==='REVIEW'?'draft':'')+'">'+x.status+'</span></td></tr>').join('')+'</tbody></table></div>':'<div class="empty">Run a paired validation in Validation 2.0 to populate this dashboard.</div>')+
+ card('Scientific boundary','<div class="notice">PASS/REVIEW statuses are calculated against the supplied acceptance criteria. They do not establish clinical validity, medical-device status, or equivalence to MDVP without an appropriate paired dataset and study methodology.</div>');
+}
+function validationEngine(){return head('MDVP Validation Engine 2.0','Pair PhonaCore batch results with MDVP reference measurements and calculate agreement statistics.')+card('Import validation data',`<div class="drop"><p>PhonaCore JSON: exported batch dataset. MDVP CSV: one row per sample with matching <code>sample_id</code>.</p><input type="file" id="valPhona" accept=".json"><input type="file" id="valMdvp" accept=".csv"><div class="toolbar"><button class="btn primary" id="runValidation">Run validation</button><button class="btn" id="exportValidation">Export report</button></div><div id="valStatus" class="small"></div></div><div id="valTable"></div>`)+card('Agreement visualization',`<div id="valChart" class="chart"><div class="empty">Run validation to generate plots.</div></div>`)+card('Reproducibility metadata',`<pre id="valMeta"></pre>`)}
+function parseCsv(text){const lines=text.trim().split(/\r?\n/);if(!lines.length)return[];const headers=lines[0].split(',').map(x=>x.trim());return lines.slice(1).filter(Boolean).map(line=>{const vals=line.split(',');return Object.fromEntries(headers.map((h,i)=>[h,Number.isFinite(Number(vals[i]))&&vals[i]!==''?Number(vals[i]):(vals[i]??'').trim()]))})}
+function pairedValidation(phona,mdvp){phona=phona.map(x=>{const rp=x.researchParameters||{};return Object.assign({},x,{dvbPct:x.dvbPct??rp.DVB,dshPct:x.dshPct??rp.DSH,duvPct:x.duvPct??rp.DUV,nuv:x.nuv??rp.NUV,nsh:x.nsh??rp.NSH,nvb:x.nvb??rp.NVB,seg:x.seg??rp.SEG,per:x.per??rp.PER,pfrSemitones:x.pfrSemitones??rp.PFR,ftriPct:x.ftriPct??rp.FTRI,atriPct:x.atriPct??rp.ATRI,fftrHz:x.fftrHz??rp.Fftr,fatrHz:x.fatrHz??rp.Fatr,tsamSec:x.tsamSec??x.durationSec})});const map=new Map(phona.map(x=>[String(x.sample_id),x]));const rows=mdvp.map(m=>({sample_id:String(m.sample_id),phona:map.get(String(m.sample_id))||null,mdvp:m}));const duplicateIds=mdvp.map(x=>String(x.sample_id)).filter((x,i,a)=>a.indexOf(x)!==i);const params=[['F0','f0Mean'],['Fhi','f0Max'],['Flo','f0Min'],['STD','f0Sd'],['Jita','jitaUs'],['Jitt','jittPct'],['RAP','rapPct'],['PPQ','ppqPct'],['sPPQ','sppqPct'],['vF0','vf0Pct'],['ShdB','shdB'],['Shim','shimPct'],['APQ','apqPct'],['sAPQ','sapqPct'],['vAm','vamPct'],['NHR','nhr']];const extendedParams=[['VTI','vti'],['SPI','spi'],['DVB','dvbPct'],['DSH','dshPct'],['DUV','duvPct'],['NUV','nuv'],['NSH','nsh'],['NVB','nvb'],['SEG','seg'],['PER','per'],['PFR','pfrSemitones'],['FTRI','ftriPct'],['ATRI','atriPct'],['Fftr','fftrHz'],['Fatr','fatrHz'],['Tsam','tsamSec']];return{rows,duplicateIds,params,extendedParams}}
+function icc31(ref,obs){const pairs=ref.map((x,i)=>[Number(x),Number(obs[i])]).filter(x=>Number.isFinite(x[0])&&Number.isFinite(x[1]));if(pairs.length<2)return null;const n=pairs.length,k=2,grand=mean(pairs.flat()),m1=mean(pairs.map(x=>x[0])),m2=mean(pairs.map(x=>x[1]));const msS=k*pairs.reduce((s,x)=>s+((x[0]+x[1])/2-grand)**2,0)/(n-1);const msR=n*((m1-grand)**2+(m2-grand)**2)/(k-1);const sse=pairs.reduce((s,x)=>s+(x[0]-((x[0]+x[1])/2))**2+(x[1]-((x[0]+x[1])/2))**2,0);const msE=sse/((n-1)*(k-1));return (msS-msE)/(msS+(k-1)*msE)}
+function agreement(ref,obs){const p=ref.map((x,i)=>[Number(x),Number(obs[i])]).filter(x=>Number.isFinite(x[0])&&Number.isFinite(x[1]));if(!p.length)return null;const r=p.map(x=>x[0]),o=p.map(x=>x[1]),d=o.map((x,i)=>x-r[i]),bias=mean(d),mae=mean(d.map(Math.abs)),rmse=Math.sqrt(mean(d.map(x=>x*x))),sdD=sd(d),mr=mean(r),mo=mean(o),vr=r.reduce((s,x)=>s+(x-mr)**2,0),vo=o.reduce((s,x)=>s+(x-mo)**2,0),cov=p.reduce((s,x,i)=>s+(x[0]-mr)*(x[1]-mo),0),pearson=Math.sqrt(vr*vo)?cov/Math.sqrt(vr*vo):null,ccc=(vr+vo+p.length*(mr-mo)**2)?2*cov/(vr+vo+p.length*(mr-mo)**2):null;return{n:p.length,bias,mae,rmse,loa95:[bias-1.96*sdD,bias+1.96*sdD],pearson,ccc,icc31:icc31(ref,obs)}}
+const VALIDATION_TARGETS={F0:{metric:'CCC',min:.99,maxBias:.5,unit:'Hz'},Fhi:{metric:'CCC',min:.99,maxBias:.5,unit:'Hz'},Flo:{metric:'CCC',min:.99,maxBias:.5,unit:'Hz'},STD:{metric:'CCC',min:.99,maxBias:.5,unit:'Hz'},Jita:{metric:'ICC',min:.95,maxBias:.05,unit:'%'},Jitt:{metric:'ICC',min:.95,maxBias:.05,unit:'%'},RAP:{metric:'ICC',min:.95,maxBias:.05,unit:'%'},PPQ:{metric:'ICC',min:.95,maxBias:.05,unit:'%'},sPPQ:{metric:'ICC',min:.95,maxBias:.05,unit:'%'},vF0:{metric:'ICC',min:.95,maxBias:.05,unit:'%'},ShdB:{metric:'ICC',min:.92,maxBias:.05,unit:'dB'},Shim:{metric:'ICC',min:.92,maxBias:.05,unit:'dB'},APQ:{metric:'ICC',min:.92,maxBias:.05,unit:'dB'},sAPQ:{metric:'ICC',min:.92,maxBias:.05,unit:'dB'},vAm:{metric:'ICC',min:.92,maxBias:.05,unit:'dB'},NHR:{metric:'CCC',min:.90,maxBias:.01,unit:'ratio'},VTI:{metric:'CCC',min:.90,maxBias:.01,unit:'ratio'},SPI:{metric:'CCC',min:.90,maxBias:.01,unit:'ratio'},DVB:{metric:'CAT',min:.98},DSH:{metric:'CAT',min:.98},DUV:{metric:'CAT',min:.98},NUV:{metric:'CAT',min:.98},NSH:{metric:'CAT',min:.98},NVB:{metric:'CAT',min:.98}};
+function validationStatus(x){const t=VALIDATION_TARGETS[x.parameter];if(!t)return 'NOT TESTED';if(x.n<2)return 'INSUFFICIENT DATA';if(t.metric==='CAT')return Number.isFinite(x.concordance)&&x.concordance>=t.min?'PASS':'REVIEW';const score=t.metric==='ICC'?x.icc31:x.ccc;return Number.isFinite(score)&&score>t.min&&Number.isFinite(x.bias)&&Math.abs(x.bias)<t.maxBias?'PASS':'REVIEW';}
+function validationReport(data){return data.params.map(([md,pc])=>{const pairs=data.rows.filter(x=>x.phona&&Number.isFinite(Number(x.mdvp[md]))&&Number.isFinite(Number(x.phona[pc])));const st=agreement(pairs.map(x=>x.mdvp[md]),pairs.map(x=>x.phona[pc]));return{parameter:md,phonacore:pc,...(st||{n:0,bias:null,mae:null,rmse:null,loa95:null,pearson:null,ccc:null})}})}
+function validationCharts(data,report){
+  const chart=$('#valChart');if(!chart)return;
+  const options=report.map((x,i)=>'<option value="'+i+'">'+x.parameter+'</option>').join('');
+  chart.innerHTML='<div class="toolbar"><label>Parameter <select id="valParam">'+options+'</select></label></div><div id="valPlots"></div>';
+  const draw=()=>{
+    const idx=Number($('#valParam').value||0),p=data.params[idx],pairs=data.rows.filter(x=>x.phona&&Number.isFinite(Number(x.mdvp[p[0]]))&&Number.isFinite(Number(x.phona[p[1]]))).map(x=>[Number(x.mdvp[p[0]]),Number(x.phona[p[1]])]);
+    const target=$('#valPlots');if(!pairs.length){target.innerHTML='<div class="empty">No paired numeric values for this parameter.</div>';return}
+    const W=720,H=280,L=58,R=20,T=24,B=42,padX=W-L-R,padY=H-T-B;
+    const xs=pairs.map(x=>x[0]),ys=pairs.map(x=>x[1]),means=pairs.map(x=>(x[0]+x[1])/2),diffs=pairs.map(x=>x[1]-x[0]);
+    const lo=Math.min(...xs,...ys),hi=Math.max(...xs,...ys),span=(hi-lo)||1;
+    const yLo=Math.min(...diffs),yHi=Math.max(...diffs),dSpan=(yHi-yLo)||1;
+    const sx=x=>L+(x-lo)/span*padX,sy=y=>T+(hi-y)/span*padY,sm=x=>L+(x-Math.min(...means))/(Math.max(...means)-Math.min(...means)||1)*padX,sd=y=>T+(yHi-y)/dSpan*padY;
+    const pts=pairs.map(x=>'<circle cx="'+sx(x[0]).toFixed(1)+'" cy="'+sy(x[1]).toFixed(1)+'" r="3"/>').join('');
+    const mean=diffs.reduce((a,b)=>a+b,0)/diffs.length,ds=sd(diffs),upper=mean+1.96*ds,lower=mean-1.96*ds;
+    const ab=pairs.map((x,i)=>'<circle cx="'+sm(means[i]).toFixed(1)+'" cy="'+sd(diffs[i]).toFixed(1)+'" r="3"/>').join('');
+    target.innerHTML='<div class="grid2"><div><h3>Reference vs PhonaCore</h3><svg viewBox="0 0 '+W+' '+H+'" role="img" aria-label="Agreement scatter plot"><line x1="'+L+'" y1="'+sy(lo)+'" x2="'+(W-R)+'" y2="'+sy(hi)+'" stroke="currentColor" opacity=".35"/>'+pts+'<line x1="'+L+'" y1="'+T+'" x2="'+L+'" y2="'+(H-B)+'" stroke="currentColor"/><line x1="'+L+'" y1="'+(H-B)+'" x2="'+(W-R)+'" y2="'+(H-B)+'" stroke="currentColor"/></svg><p class="small">x = MDVP/reference; y = PhonaCore. Identity line shown for visual agreement only.</p></div><div><h3>Bland–Altman</h3><svg viewBox="0 0 '+W+' '+H+'" role="img" aria-label="Bland Altman plot"><line x1="'+L+'" y1="'+sd(mean)+'" x2="'+(W-R)+'" y2="'+sd(mean)+'" stroke="currentColor"/><line x1="'+L+'" y1="'+sd(upper)+'" x2="'+(W-R)+'" y2="'+sd(upper)+'" stroke="currentColor" opacity=".45"/><line x1="'+L+'" y1="'+sd(lower)+'" x2="'+(W-R)+'" y2="'+sd(lower)+'" stroke="currentColor" opacity=".45"/>'+ab+'<line x1="'+L+'" y1="'+T+'" x2="'+L+'" y2="'+(H-B)+'" stroke="currentColor"/><line x1="'+L+'" y1="'+(H-B)+'" x2="'+(W-R)+'" y2="'+(H-B)+'" stroke="currentColor"/></svg><p class="small">difference = PhonaCore − reference; lines = mean difference and ±1.96 SD.</p></div></div>';
+  };
+  $('#valParam').onchange=draw;draw();
+}
+function research(){
+  const schema=(window.SV_DSP?.MDVP_33_PARAMETER_SCHEMA||[]).map(x=>'<tr><td>'+x[0]+'</td><td>'+x[1]+'</td><td>'+x[2]+'</td><td>'+x[3]+'</td><td>'+x[4]+'</td></tr>').join('');
+  return head('Research Lab','Advanced research tools are kept here instead of occupying the main application navigation.')+
+  card('MDVP 33-parameter reference', '<div class="tablewrap"><table><thead><tr><th>Symbol</th><th>Parameter</th><th>Unit</th><th>Definition</th><th>Reference threshold</th></tr></thead><tbody>'+schema+'</tbody></table></div><div class="notice">Reference values are derived from the supplied MDVP specification and are shown as research/reference metadata, not as automatic diagnosis.</div>')+
+  card('Validation & agreement','<div class="grid2"><button class="patient" data-research-tool="Validation 2.0"><b>Reference agreement</b><small>Compare PhonaCore measurements with a reference dataset such as MDVP.</small></button><button class="patient" data-research-tool="Algorithm Validation"><b>Algorithm validation</b><small>Engineering validation; not part of routine participant workflow.</small></button><button class="patient" data-research-tool="Reliability Lab"><b>Reliability</b><small>Test–retest and condition agreement analysis.</small></button><button class="patient" data-research-tool="Validity Lab"><b>Validity</b><small>Criterion/paired validity analysis.</small></button></div>')+
+  card('Research processing','<div class="grid2"><button class="patient" data-research-tool="Batch Research"><b>Batch analysis</b><small>Analyze existing WAV datasets in bulk.</small></button><button class="patient" data-research-tool="Datasets"><b>Datasets</b><small>Organize research datasets.</small></button><button class="patient" data-research-tool="Statistics"><b>Statistics</b><small>Run research statistics after data collection.</small></button><button class="patient" data-research-tool="Study Manager & Final QA"><b>Study QA & reproducibility</b><small>Final research checks and publication package tools.</small></button></div>')+
+  card('Internal tools','<div class="grid2"><button class="patient" data-research-tool="Study Protocol"><b>Study protocol</b><small>Internal protocol reference.</small></button><button class="patient" data-research-tool="Tele-Assessment"><b>Tele-assessment</b><small>Optional browser session architecture.</small></button></div>')+
+  card('Scientific boundary','<div class="notice">These tools support research validation and reproducibility. They are not required for routine participant recording.</div>');
+}
+function agreementStats(ref,obs){const pairs=ref.map((x,i)=>[x,obs[i]]).filter(x=>Number.isFinite(x[0])&&Number.isFinite(x[1]));if(!pairs.length)return null;const r=pairs.map(x=>x[0]),o=pairs.map(x=>x[1]),d=o.map((x,i)=>x-r[i]),mae=mean(d.map(Math.abs)),rmse=Math.sqrt(mean(d.map(x=>x*x))),bias=mean(d),sdD=sd(d),loa=[bias-1.96*sdD,bias+1.96*sdD];const mr=mean(r),mo=mean(o),num=pairs.reduce((s,x,i)=>s+(x[0]-mr)*(x[1]-mo),0),den=Math.sqrt(pairs.reduce((s,x)=>s+(x-mr)**2,0)*pairs.reduce((s,x)=>s+(x-mo)**2,0));const pearson=den?num/den:null;const ccc=(mr&&mo)?(2*num)/(pairs.reduce((s,x)=>s+(x-mr)**2,0)+pairs.reduce((s,x)=>s+(x-mo)**2,0)+(mr-mo)**2):null;return{n:pairs.length,bias,mae,rmse,loa95:loa,pearson,ccc}}
+function parsePairs(text){return text.trim().split(/\n+/).slice(1).map(line=>line.split(',').map(Number)).filter(x=>x.length>=2)}
+function studyManager(){return head('Study Manager & Final QA','End-to-end human-study management, reproducibility packaging and final readiness gate.')+
+card('Study setup','<div class="formgrid"><label>Study ID<input id="fmStudyId" value="PHONACORE-STUDY-01"></label><label>Protocol version<input id="fmProtocol" value="1.0"></label><label>Principal investigator / analyst<input id="fmAnalyst" placeholder="Name / code"></label><label>Reference system<input id="fmReference" value="MDVP / reference system"></label></div><div class="toolbar"><button class="btn primary" id="saveStudy">Save study metadata</button><button class="btn" id="buildPublication">Build results package</button></div><div id="studyStatus" class="small"></div>')+
+card('Participant / recording registry','<div class="formgrid"><label>Participant code<input id="fmParticipant" placeholder="P001"></label><label>Session ID<input id="fmSession" value="T1"></label><label>Device<input id="fmDevice" placeholder="Device / microphone"></label><label>Browser / OS<input id="fmBrowser" placeholder="Browser / OS"></label><label>Task<input id="fmTask" value="sustained /a/"></label><label>Consent<input id="fmConsent" type="checkbox"></label></div><button class="btn" id="addStudyRecord">Add recording record</button><div id="studyRecords"></div>')+
+card('Final QA gate','<div id="finalQaResults"><div class="empty">Run the gate after completing study steps.</div></div><div class="toolbar"><button class="btn primary" id="runFinalQa">Run final QA</button><button class="btn" id="exportFinalQa">Export QA</button></div>')+
+card('Publication / reproducibility package','<div id="publicationResults"><div class="empty">Build the package after analysis.</div></div><button class="btn" id="exportPublication">Export complete research package</button>')+
+card('Final scientific boundary','<div class="notice">Final QA confirms workflow completeness and software/data checks. It does not certify the system as a medical device or establish clinical validity. Human-study conclusions must be based on the actual study dataset and approved methodology.</div>')}
+function renderStudyRecords(){const el=$('#studyRecords');if(!el)return;const rs=state.studyRecords||[];el.innerHTML=rs.length?'<div style="overflow:auto"><table><thead><tr><th>Participant</th><th>Session</th><th>Device</th><th>Browser/OS</th><th>Task</th><th>Consent</th></tr></thead><tbody>'+rs.map(x=>'<tr><td>'+x.participant+'</td><td>'+x.session+'</td><td>'+x.device+'</td><td>'+x.browser+'</td><td>'+x.task+'</td><td>'+ (x.consent?'YES':'NO')+'</td></tr>').join('')+'</tbody></table></div>':'<div class="empty">No study records.</div>'}
+function renderFinalQa(){const q=window.PC_FINAL_QA.run(state);$('#finalQaResults').innerHTML='<div class="grid2"><div class="metric big"><span>Checks passed</span><b>'+q.filter(x=>x.pass).length+'/'+q.length+'</b><small>workflow gate</small></div><div class="metric big"><span>Status</span><b>'+(q.every(x=>x.pass)?'READY':'INCOMPLETE')+'</b><small>software/data readiness</small></div></div><div class="tablewrap"><table><thead><tr><th>Check</th><th>Status</th></tr></thead><tbody>'+q.map(x=>'<tr><td>'+x.label+'</td><td><b>'+(x.pass?'PASS':'REVIEW')+'</b></td></tr>').join('')+'</tbody></table></div>';state.finalQa={generatedAt:new Date().toISOString(),checks:q,ready:q.every(x=>x.pass)}}
+function buildPublication(){const pkg={schemaVersion:'1.0',generatedAt:new Date().toISOString(),study:state.studyMeta||null,records:state.studyRecords||[],algorithmValidation:state.algorithmValidation||null,mdvpValidation:state.validationReport||null,criterionValidity:state.validityReport||null,reliability:state.reliabilityReport||null,batchManifest:state.batchResults?.map(x=>({sample_id:x.sample_id,fileName:x.fileName,sha256:x.sha256,protocolStatus:x.protocolStatus,protocolIssues:x.protocolIssues||[]}))||[],finalQa:state.finalQa||null,software:'PhonaCore-ASLP',localFirst:true,interpretationBoundary:'Research/educational software workflow; no diagnostic or clinical-validity claim is generated automatically.'};state.publicationPackage=pkg;$('#publicationResults').innerHTML='<pre>'+JSON.stringify(pkg,null,2)+'</pre>'}
+function algorithmValidation(){return head('Algorithm Validation','Controlled signal validation before human-recording or MDVP agreement analysis.')+
+card('Validation workflow','<div class="pipeline">'+['1. Configure','2. Generate','3. Measure','4. Compare','5. Gate','6. Export'].map((x,i)=>'<div><span>0'+(i+1)+'</span><b>'+x+'</b></div>').join('')+'</div>')+
+card('Pre-specified benchmark','<div class="grid2"><label>F0 tolerance (Hz)<input id="avF0" type="number" step="0.1" value="2"></label><label>Jitt / RAP / PPQ / sPPQ / vF0 tolerance (%)<input id="avPert" type="number" step="0.1" value="1"></label><label>Shimmer / APQ / sAPQ / vAm tolerance (%)<input id="avAmp" type="number" step="0.1" value="3"></label></div><div class="toolbar"><button class="btn primary" id="runAlgorithmValidation">Run full validation</button><button class="btn" id="exportAlgorithmValidation">Export report</button><button class="btn" id="clearAlgorithmValidation">Clear</button></div><div id="avStatus" class="small"></div>')+
+card('Validation gate','<div id="avGate"><div class="empty">Run the benchmark to determine readiness.</div></div>')+
+card('Parameter-level results','<div id="avParameters"><div class="empty">No validation results.</div></div>')+
+card('Case-level results','<div id="avCases"><div class="empty">No validation results.</div></div>')+
+card('Scientific boundary','<div class="notice">A PASS means the implementation met the pre-specified synthetic engineering tolerance. It does not mean clinical validity, normality, diagnostic accuracy, or equivalence to MDVP.</div>')}
+
+function renderAlgorithmValidation(r){const ready=r.overallPass;$('#avGate').innerHTML='<div class="notice"><b>'+ (ready?'VALIDATION GATE: PASS':'VALIDATION GATE: REVIEW REQUIRED')+'</b><p>'+ (ready?'All controlled synthetic checks passed. Continue to real-recording and reference-system validation.':'At least one controlled check failed. Do not use this result as evidence of validity until the algorithm is reviewed.')+'</p></div>';$('#avParameters').innerHTML='<div style="overflow:auto"><table><thead><tr><th>Parameter</th><th>N</th><th>Pass</th><th>Fail</th><th>Pass rate</th><th>Max |error|</th></tr></thead><tbody>'+r.parameters.map(x=>'<tr><td>'+x.parameter+'</td><td>'+x.n+'</td><td>'+x.pass+'</td><td>'+x.fail+'</td><td>'+f((x.passRate??0)*100)+'%</td><td>'+f(x.maxAbsError)+'</td></tr>').join('')+'</tbody></table></div>';$('#avCases').innerHTML='<div style="overflow:auto"><table><thead><tr><th>Case</th><th>Parameters tested</th><th>Failures</th><th>Status</th></tr></thead><tbody>'+r.cases.map(x=>'<tr><td>'+x.id+'</td><td>'+x.results.length+'</td><td>'+ (x.failures.join(', ')||'—')+'</td><td><b>'+ (x.failures.length?'REVIEW':'PASS')+'</b></td></tr>').join('')+'</tbody></table></div>'}
+function validityLab(){return head('Validity Lab','Criterion validity evidence from paired PhonaCore-ASLP and reference measurements.')+card('Paired reference dataset','<div class="drop"><p>CSV format: <code>sample_id,reference,phonacore</code>. Use the same recordings and parameter definition for both systems.</p><input type="file" id="validityFile" accept=".csv,text/csv"><div class="formgrid"><label>Parameter<select id="validityParam"><option>f0Mean</option><option>f0Sd</option><option>jitaUs</option><option>jittPct</option><option>rapPct</option><option>ppqPct</option><option>sppqPct</option><option>vf0Pct</option><option>shdB</option><option>shimPct</option><option>apqPct</option><option>sapqPct</option><option>vamPct</option><option>nhr</option><option>vti</option><option>spi</option><option>cppPrototypeDb</option></select></label><label>Reference label<input id="validityReference" value="MDVP/reference"></label></div><div class="toolbar"><button class="btn primary" id="runValidity">Analyze validity</button><button class="btn" id="exportValidity">Export report</button><button class="btn" id="clearValidity">Clear</button></div><div id="validityStatus" class="small"></div></div>')+card('Validity evidence','<div id="validityResults"><div class="empty">Import paired measurements and run analysis.</div></div>')+card('Interpretation boundary','<div class="notice">This module reports criterion-validity evidence: correlation, concordance, paired error and Bland–Altman agreement. It does not by itself establish clinical validity, diagnostic accuracy, normative validity, or equivalence to MDVP.</div>')}
+function renderValidityReport(r){var html='<div class="grid2"><div class="metric big"><span>Paired N</span><b>'+r.n+'</b><small>matched samples</small></div><div class="metric big"><span>CCC</span><b>'+f(r.ccc)+'</b><small>concordance correlation</small></div><div class="metric big"><span>Pearson r</span><b>'+f(r.pearson)+'</b><small>linear association</small></div><div class="metric big"><span>Bias</span><b>'+f(r.bias)+'</b><small>PhonaCore − reference</small></div></div><div class="tablewrap"><table><thead><tr><th>N</th><th>CCC</th><th>Pearson r</th><th>Bias</th><th>MAE</th><th>RMSE</th><th>95% LoA</th></tr></thead><tbody><tr><td>'+r.n+'</td><td>'+f(r.ccc)+'</td><td>'+f(r.pearson)+'</td><td>'+f(r.bias)+'</td><td>'+f(r.mae)+'</td><td>'+f(r.rmse)+'</td><td>'+f(r.loa95?.[0])+' to '+f(r.loa95?.[1])+'</td></tr></tbody></table></div>';$('#validityResults').innerHTML=card('Criterion validity',html)}
+function batchResearch(){return head('Batch Research','Import standardized WAV recordings and generate a reproducible PhonaCore analysis dataset.')+card('Batch WAV analysis',`<div class="drop"><p>Select one or more WAV files. Analysis runs locally in this browser; files are not uploaded by this interface.</p><input type="file" id="batchWav" accept=".wav,audio/wav,audio/x-wav" multiple><div class="toolbar"><button class="btn primary" id="runBatch">Analyze WAV set</button><button class="btn" id="exportBatch">Export dataset JSON</button><button class="btn" id="exportBatchCsv">Export CSV</button><button class="btn" id="exportBatchManifest">Export manifest</button><button class="btn" id="clearBatch">Clear</button></div><div id="batchStatus" class="small"></div></div><div id="batchTable"></div>`)+card('Dataset manifest',`<pre id="batchManifest"></pre>`)+card('Research QA','<div id="batchQa" class="small">Run a batch analysis to generate protocol QA.</div>')}
+function renderBatch(rows){if(!rows.length){$('#batchTable').innerHTML='<div class="empty">No WAV analyses yet.</div>';return}const cols=['sample_id','durationSec','sampleRate','f0Mean','f0Min','f0Max','f0Sd','jitaUs','jittPct','rapPct','ppqPct','sppqPct','vf0Pct','shdB','shimPct','apqPct','sapqPct','vamPct','nhr','voicedPct','clippedPct','protocolStatus'];$('#batchTable').innerHTML='<div style="overflow:auto"><table><thead><tr>'+cols.map(x=>'<th>'+x+'</th>').join('')+'</tr></thead><tbody>'+rows.map(r=>'<tr>'+cols.map(x=>'<td>'+f(r[x])+'</td>').join('')+'</tr>').join('')+'</tbody></table></div>'}
+function csvEscape(v){const s=v==null?'':String(v);return /[",\\n]/.test(s)?'"'+s.replace(/"/g,'""')+'"':s}
+function batchCsv(rows){const cols=['sample_id','fileName','sampleRate','channels','durationSec','f0Mean','f0Min','f0Max','f0Sd','jitaUs','jittPct','rapPct','ppqPct','sppqPct','vf0Pct','shdB','shimPct','apqPct','sapqPct','vamPct','nhr','vti','spi','cppPrototypeDb','voicedPct','clippedPct','protocolStatus','protocolIssues','sha256'];return [cols.join(','),...rows.map(r=>cols.map(k=>csvEscape(Array.isArray(r[k])?r[k].join('; '):r[k])).join(','))].join('\\n')}
+function downloadText(name,text,type='text/plain'){const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([text],{type}));a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000)}
+async function sha256File(file){if(!crypto?.subtle)return null;const hash=await crypto.subtle.digest('SHA-256',await file.arrayBuffer());return [...new Uint8Array(hash)].map(x=>x.toString(16).padStart(2,'0')).join('')}
+function batchProtocolQa(row){const issues=[];if(row.channels!==1)issues.push('not mono');if(row.durationSec<3||row.durationSec>5)issues.push('acquisition duration outside 3–5 s');if(![44100,50000].includes(row.sampleRate))issues.push('sample rate outside MDVP validation protocol (44.1/50 kHz)');if(Number.isFinite(row.clippedPct)&&row.clippedPct>1)issues.push('clipping >1%');if(Number.isFinite(row.voicedPct)&&row.voicedPct<30)issues.push('voiced material <30%');if(row.measurementGate?.issues?.length)issues.push(...row.measurementGate.issues);return{status:issues.length?'LIMITED':'PASS',issues:[...new Set(issues)]}}
+function renderBatchQa(rows){const pass=rows.filter(r=>r.protocolStatus==='PASS').length,limited=rows.length-pass;$('#batchQa').innerHTML='<b>'+rows.length+'</b> recordings • <b>'+pass+'</b> protocol pass • <b>'+limited+'</b> limited'+(limited?'<ul class="clean">'+rows.filter(r=>r.protocolStatus!=='PASS').slice(0,8).map(r=>'<li><b>'+r.sample_id+'</b>: '+(r.protocolIssues||[]).join('; ')+'</li>').join('')+'</ul>':'<p class="small">All imported recordings passed the current engineering QA gate.</p>')}
+async function decodeWavFile(file){const C=window.AudioContext||window.webkitAudioContext;const ac=new C();const buf=await ac.decodeAudioData(await file.arrayBuffer());const samples=new Float32Array(buf.getChannelData(0));return {fileName:file.name,sampleRate:buf.sampleRate,channels:buf.numberOfChannels,durationSec:buf.duration,samples}}
+function datasets(){return head('Datasets','Local research dataset registry and QA.')+card('Create dataset',`<div class="toolbar"><input id="dsname" value="PhonaCore Study"><button class="btn primary" id="createDs">Create</button></div>`)+card('Datasets',state.datasets.length?state.datasets.map(d=>`<p><b>${d.name}</b> <span class="tag">${d.samples.length} samples</span></p>`).join(''):'<div class="empty">No datasets.</div>')}
+function statistics(){const done=state.sessions.map(s=>s.m);return head('Statistics','Descriptive summaries of the current local dataset.')+`<div class="metrics">${[['F₀',done.map(x=>x.f0Mean),'Hz'],['Jitter',done.map(x=>x.jitterLocalPct),'%'],['Shimmer',done.map(x=>x.shimmerLocalPct),'%'],['CPP',done.map(x=>x.cppPrototypeDb),'dB-like']].map(([n,a,u])=>{const d=stats(a);return`<div class="metric big"><span>${n}</span><b>${f(d.mean)} ${u}</b><small>N=${d.n} • SD ${f(d.sd)} • median ${f(d.median)}</small></div>`}).join('')}</div>${card('Boundary','<div class="notice">Descriptive statistics are not clinical norms and do not establish diagnostic thresholds or validity.</div>')}`}
+function security(){return head('Security Center','Privacy and deployment controls.')+card('Current boundary',`<ul class="clean"><li>LocalStorage for prototype records.</li><li>No cloud upload endpoint in this build.</li><li>Measurement audio remains in browser memory unless exported.</li><li>Security headers are served by the included Node server.</li><li>HTTPS is required for non-local deployment and microphone access.</li></ul>`)+card('Production checklist','<ul class="clean"><li>Independent penetration testing</li><li>Authentication and RBAC</li><li>Encrypted backend storage if cloud records are introduced</li><li>Key management and secure signaling for telehealth</li><li>Privacy/legal/regulatory review</li></ul>')}
+function fileManager(){return head('File Manager','Local voice recordings stored in this browser. No recording is uploaded to the PhonaCore server by this build.','<button class="btn" id="chooseAudioFolder">Choose export folder</button>')+card('Local recordings','<div id="audioFileList"><div class="empty">Loading recordings…</div></div>')+card('Storage model','<div class="notice">Recordings are stored as WAV Blobs in browser IndexedDB for this site. Export important research data to your approved storage location.</div>')}
+function settings(){return head('Settings','Application preferences and data controls.')+card('Local storage',`<p>Participants: ${state.patients.length}</p><p>Sessions: ${state.sessions.length}</p><p>Audio files: ${state.audioFiles.length}</p><div class="toolbar"><button class="btn" id="downloadAll">Export metadata</button><button class="btn" id="clearAllLocal">Clear all local metadata</button></div>`) +card('About','<p>PhonaCore-ASLP Browser Build — research/educational software.</p><p class="small">Clinical interpretation and research conclusions require appropriate clinician/researcher review and independent validation.</p>')}
+async function runMdvpValidation(){const pf=$('#phonaFile')?.files[0],mf=$('#mdvpFile')?.files[0],out=$('#mdvpResult');if(!pf||!mf){out.innerHTML='<div class="notice">Select both files.</div>';return}try{const pj=JSON.parse(await pf.text()),phona=Array.isArray(pj)?pj:(pj.results||pj.sessions||[pj]),rows=parseSimpleCSV(await mf.text()),by=new Map(phona.map(x=>{const z=x.analysis||x.m||x;return[String(z.sample_id??z.sampleId??z.id),z]}));const map=[['F0','f0Mean'],['Fhi','f0Max'],['Flo','f0Min'],['STD','f0Sd'],['Jita','jitaUs'],['Jitt','jittPct'],['RAP','rapPct'],['PPQ','ppqPct'],['sPPQ','sppqPct'],['vF0','vf0Pct'],['ShdB','shdB'],['Shim','shimPct'],['APQ','apqPct'],['sAPQ','sapqPct'],['vAm','vamPct'],['NHR','nhr']],pairs=rows.map(r=>({p:by.get(String(r.sample_id)),m:r})).filter(q=>q.p),outStats=map.map(([m,f])=>{const v=pairs.map(q=>[Number(q.p[f]),Number(q.m[m])]).filter(q=>Number.isFinite(q[0])&&Number.isFinite(q[1]));if(!v.length)return{m,n:0};const d=v.map(q=>q[0]-q[1]),b=d.reduce((s,x)=>s+x,0)/d.length,mae=d.reduce((s,x)=>s+Math.abs(x),0)/d.length,rmse=Math.sqrt(d.reduce((s,x)=>s+x*x,0)/d.length),s=d.length>1?Math.sqrt(d.reduce((z,x)=>z+(x-b)**2,0)/(d.length-1)):0;return{m,n:v.length,b,mae,rmse,lo:b-1.96*s,hi:b+1.96*s}});out.innerHTML='<div class="notice">Paired samples: <b>'+pairs.length+'</b>. Correlation is not agreement.</div><div class="tablewrap"><table><thead><tr><th>MDVP</th><th>N</th><th>Bias</th><th>MAE</th><th>RMSE</th><th>95% LoA</th></tr></thead><tbody>'+outStats.map(s=>'<tr><td>'+s.m+'</td><td>'+s.n+'</td><td>'+(s.n?f(s.b):'—')+'</td><td>'+(s.n?f(s.mae):'—')+'</td><td>'+(s.n?f(s.rmse):'—')+'</td><td>'+(s.n?f(s.lo)+' to '+f(s.hi):'—')+'</td></tr>').join('')+'</tbody></table></div>'}catch(e){out.innerHTML='<div class="notice">Validation error: '+e.message+'</div>'}}
+function parseSimpleCSV(t){const lines=t.trim().split(/\r?\n/).filter(Boolean);if(!lines.length)return[];const h=lines[0].split(',').map(x=>x.trim());return lines.slice(1).map(line=>{const v=line.split(',');return Object.fromEntries(h.map((k,i)=>[k,(v[i]??'').trim()]))})}
+function runAlgorithmValidationAnalysis(){
+  const status=$('#avStatus');
+  try{
+    if(!window.PC_ALGORITHM_VALIDATION?.run) throw new Error('Algorithm validation module is unavailable.');
+    const t={
+      F0:Number($('#avF0')?.value)||2,
+      Jitt:Number($('#avPert')?.value)||1,
+      RAP:Number($('#avPert')?.value)||1,
+      PPQ:Number($('#avPert')?.value)||1,
+      sPPQ:Number($('#avPert')?.value)||1,
+      vF0:Number($('#avPert')?.value)||1,
+      Shim:Number($('#avAmp')?.value)||3,
+      APQ:Number($('#avAmp')?.value)||3,
+      sAPQ:Number($('#avAmp')?.value)||3,
+      vAm:Number($('#avAmp')?.value)||3
+    };
+    const report=window.PC_ALGORITHM_VALIDATION.run(t);
+    state.algorithmValidation=report;
+    renderAlgorithmValidation(report);
+    if(status)status.textContent='Synthetic algorithm validation completed.';
+  }catch(e){
+    if(status)status.textContent='Algorithm validation error: '+(e?.message||e);
+    console.error('PhonaCore algorithm validation failed',e);
+  }
+}
+function runReliabilityAnalysis(){
+  const file=$('#relFile')?.files?.[0];if(!file){$('#relStatus').textContent='Select a CSV file.';return}
+  file.text().then(text=>{try{
+    const rows=parseCsv(text),parameter=$('#relParam').value;
+    const testRetest=PC_REL.testRetest(rows,{id:'subject_id',session:'session_id',parameter,first:$('#relT1').value.trim()||'T1',second:$('#relT2').value.trim()||'T2'});
+    const condition=PC_REL.condition(rows,{id:'subject_id',condition:'condition',parameter,a:$('#relA').value.trim()||'A',b:$('#relB').value.trim()||'B'});
+    state.reliabilityReport={schemaVersion:'1.0',generatedAt:new Date().toISOString(),file:file.name,parameter,testRetest,condition};
+    $('#relStatus').textContent='Analyzed '+rows.length+' CSV rows for '+parameter+'.';renderReliabilityReport(state.reliabilityReport);
+  }catch(e){$('#relStatus').textContent='Reliability error: '+e.message}})
+}
+function runValidityAnalysis(){const file=$('#validityFile')?.files?.[0];if(!file){$('#validityStatus').textContent='Select a paired CSV file.';return}file.text().then(t=>{try{const rows=parseCsv(t),p=rows.map(r=>({reference:r.reference,phonacore:r.phonacore})),report=PC_VALIDITY.criterionValidity(p);state.validityReport={schemaVersion:'1.0',generatedAt:new Date().toISOString(),file:file.name,parameter:$('#validityParam').value,reference:$('#validityReference').value,results:report};$('#validityStatus').textContent='Analyzed '+rows.length+' CSV rows.';renderValidityReport(report)}catch(e){$('#validityStatus').textContent='Validity error: '+e.message}})}
+function chooseRole(role){
+ state.role=role;store.set('role',role);
+ if(role==='patient'){state.patient=null;state.page='Demographics';}
+ else {state.page='Dashboard';}
+ state.notice=role==='patient'?'Patient / other-user interface selected.':'Clinician interface selected.';
+ render();
+}
+function wire(){
+  const on=(id,event,handler)=>{const el=$('#'+id);if(el)el.addEventListener(event,handler);};
+  on('globalNewAssessment','click',startNewAssessment);
+  on('themeToggle','click',()=>{state.theme=state.theme==='night'?'day':'night';store.set('theme',state.theme);render()});
+  on('runReliability','click',runReliabilityAnalysis );
+  on('runValidity','click',runValidityAnalysis);
+  on('runAlgorithmValidation','click',runAlgorithmValidationAnalysis);
+  on('saveStudy','click',()=>{state.studyMeta={studyId:$('#fmStudyId').value,protocolVersion:$('#fmProtocol').value,analyst:$('#fmAnalyst').value,referenceSystem:$('#fmReference').value,savedAt:new Date().toISOString()};state.studyManifest={protocolVersion:state.studyMeta.protocolVersion};$('#studyStatus').textContent='Study metadata saved locally.'});
+  on('addStudyRecord','click',()=>{const r={participant:$('#fmParticipant').value.trim(),session:$('#fmSession').value.trim(),device:$('#fmDevice').value.trim(),browser:$('#fmBrowser').value.trim(),task:$('#fmTask').value.trim(),consent:$('#fmConsent').checked,createdAt:new Date().toISOString()};if(!r.participant){$('#studyStatus').textContent='Participant code required.';return}state.studyRecords=state.studyRecords||[];state.studyRecords.push(r);renderStudyRecords()});
+  on('runFinalQa',renderFinalQa);
+  on('exportFinalQa',()=>{if(state.finalQa)download('phonacore-final-qa.json',state.finalQa)});
+  on('buildPublication',buildPublication);
+  on('exportPublication',()=>{if(state.publicationPackage)download('phonacore-complete-research-package.json',state.publicationPackage)});
+  renderStudyRecords();
+
+  on('exportAlgorithmValidation','click',()=>{if(state.algorithmValidation)download('phonacore-algorithm-validation.json',state.algorithmValidation)});
+  on('clearAlgorithmValidation','click',()=>{state.algorithmValidation=null;render()});
+  on('exportValidity','click',()=>{if(state.validityReport)download('phonacore-validity-report.json',state.validityReport)});
+  on('clearValidity','click',()=>{state.validityReport=null;render()});
+  on('exportReliability','click',()=>{if(state.reliabilityReport)download('phonacore-reliability-report.json',state.reliabilityReport)});
+  on('clearReliability','click',()=>{state.reliabilityReport=null;render()});
+  on('runValidation','click',async()=>{
+    try{
+      const pf=$('#valPhona')?.files?.[0],mf=$('#valMdvp')?.files?.[0];
+      if(!pf||!mf){$('#valStatus').textContent='Select both PhonaCore JSON and MDVP CSV.';return}
+      const pj=JSON.parse(await pf.text());
+      const phona=Array.isArray(pj)?pj:(pj.rows||pj.samples||[]);
+      const mdvp=parseCsv(await mf.text());
+      const data=pairedValidation(phona,mdvp);
+      const report=validationReport(data);
+      state.validationReport={generatedAt:new Date().toISOString(),rows:report,matched:data.rows.filter(x=>x.phona).length,totalReference:data.rows.length,duplicates:data.duplicateIds};state.validationCache={report,pairedN:state.validationReport.matched};
+      $('#valStatus').textContent='Matched '+state.validationReport.matched+' of '+state.validationReport.totalReference+' reference rows.';
+      $('#valTable').innerHTML='<div style="overflow:auto"><table><thead><tr><th>Parameter</th><th>N</th><th>Bias</th><th>MAE</th><th>RMSE</th><th>LoA 95%</th><th>CCC</th><th>ICC(3,1)</th><th>Status</th></tr></thead><tbody>'+report.map(x=>'<tr><td>'+x.parameter+'</td><td>'+x.n+'</td><td>'+f(x.bias)+'</td><td>'+f(x.mae)+'</td><td>'+f(x.rmse)+'</td><td>'+f(x.loa95?.[0])+' to '+f(x.loa95?.[1])+'</td><td>'+f(x.ccc)+'</td></tr>').join('')+'</tbody></table></div>';
+      $('#valMeta').textContent=JSON.stringify({generatedAt:state.validationReport.generatedAt,phonacoreFile:pf.name,mdvpFile:mf.name,matched:state.validationReport.matched,totalReference:state.validationReport.totalReference,duplicates:state.validationReport.duplicates,method:'paired sample_id; bias/MAE/RMSE/Bland–Altman LoA/CCC'},null,2); validationCharts(data,report);
+    }catch(e){$('#valStatus').textContent='Validation error: '+e.message}
+  });
+  on('exportValidation','click',()=>{
+    if(!state.validationReport)return;
+    const b=new Blob([JSON.stringify(state.validationReport,null,2)],{type:'application/json'}),a=document.createElement('a');
+    a.href=URL.createObjectURL(b);a.download='phonacore-mdvp-validation.json';a.click();
+  });
+  on('runBatch','click',async()=>{
+    const files=[...($('#batchWav')?.files||[])];
+    if(!files.length){alert('Select at least one WAV file.');return}
+    const rows=[];$('#batchStatus').textContent='Analyzing '+files.length+' file(s)...';
+    for(const file of files){
+      try{
+        const d=await decodeWavFile(file),a=analyzeVoice(d.samples,d.sampleRate),sha256=await sha256File(file);
+        const measurementGate=a.measurementStatus?.gate||null;
+        const rp=a.researchParameters||{};const row={sample_id:file.name.replace(/\.[^.]+$/,''),fileName:file.name,sampleRate:d.sampleRate,channels:d.channels,durationSec:d.durationSec,...a,measurementGate,sha256,dvbPct:rp.DVB,dshPct:rp.DSH,duvPct:rp.DUV,nuv:rp.NUV,nsh:rp.NSH,nvb:rp.NVB,seg:rp.SEG,per:rp.PER,pfrSemitones:rp.PFR,ftriPct:rp.FTRI,atriPct:rp.ATRI,fftrHz:rp.Fftr,fatrHz:rp.Fatr,tsamSec:a.durationSec};
+        const qa=batchProtocolQa(row);row.protocolStatus=qa.status;row.protocolIssues=qa.issues;rows.push(row);
+      }catch(e){rows.push({sample_id:file.name,fileName:file.name,error:e.message})}
+    }
+    state.batchResults=rows;$('#batchStatus').textContent='Completed '+rows.length+' file(s).';renderBatch(rows);renderBatchQa(rows);
+    $('#batchManifest').textContent=JSON.stringify({generatedAt:new Date().toISOString(),count:rows.length,analysis:'PhonaCore-ASLP',localProcessing:true,protocol:'MDVP_VALIDATION_PROTOCOL',samples:rows.map(x=>({sample_id:x.sample_id,fileName:x.fileName,sha256:x.sha256,sampleRate:x.sampleRate,channels:x.channels,durationSec:x.durationSec,protocolStatus:x.protocolStatus,protocolIssues:x.protocolIssues||[]}))},null,2);
+  });
+  on('exportBatch','click',()=>{
+    const rows=state.batchResults||[];if(!rows.length)return;
+    const payload={schemaVersion:'1.1',generatedAt:new Date().toISOString(),localProcessing:true,protocol:'STANDARD_PROTOCOL',rows};
+    const b=new Blob([JSON.stringify(payload,null,2)],{type:'application/json'}),a=document.createElement('a');
+    a.href=URL.createObjectURL(b);a.download='phonacore-batch-dataset.json';a.click();
+  });
+  on('exportBatchCsv','click',()=>{const rows=state.batchResults||[];if(rows.length)downloadText('phonacore-batch-dataset.csv',batchCsv(rows),'text/csv')});
+  on('exportBatchManifest','click',()=>{const rows=state.batchResults||[];if(rows.length)downloadText('phonacore-batch-manifest.json',JSON.stringify({schemaVersion:'1.0',generatedAt:new Date().toISOString(),protocol:'STANDARD_PROTOCOL',localProcessing:true,samples:rows.map(r=>({sample_id:r.sample_id,fileName:r.fileName,sha256:r.sha256,sampleRate:r.sampleRate,channels:r.channels,durationSec:r.durationSec,protocolStatus:r.protocolStatus,protocolIssues:r.protocolIssues||[]}))},null,2),'application/json')});
+  on('clearBatch','click',()=>{state.batchResults=[];render()});
+  on('makeManifest','click',()=>{
+    const m={protocolVersion:'1.0',studyId:$('#studyId').value,sampleId:$('#sampleId').value,participantCode:$('#participantCode').value,device:$('#studyDevice').value,task:'sustained /a/',targetDurationSec:4,acceptableDurationSec:[3,5],analysisSegmentSec:[1,3],samplingRateHz:[44100,50000],channels:1,microphoneDistanceCm:15,angleDegrees:45,preprocessing:{echoCancellation:false,noiseSuppression:false,autoGainControl:false},createdAt:new Date().toISOString()};
+    state.studyManifest=m;$('#manifestOut').textContent=JSON.stringify(m,null,2);
+  });
+  on('exportManifest','click',()=>{
+    if(!state.studyManifest)return;
+    const b=new Blob([JSON.stringify(state.studyManifest,null,2)],{type:'application/json'}),a=document.createElement('a');
+    a.href=URL.createObjectURL(b);a.download=(state.studyManifest.sampleId||'sample')+'-manifest.json';a.click();
+  });
+  on('runSynthetic','click',()=>{$('#syntheticOut').textContent=JSON.stringify({generatedAt:new Date().toISOString(),note:'Run the Node benchmark command for authoritative CI results.'},null,2)});
+  on('runRepro','click',()=>{const p=parsePairs($('#reproData').value),r=agreementStats(p.map(x=>x[0]),p.map(x=>x[1]));$('#reproOut').innerHTML=r?'<pre>'+JSON.stringify(r,null,2)+'</pre>':'<div class="empty">No valid pairs.</div>'});
+  on('exportRepro','click',()=>{const p=parsePairs($('#reproData').value),r=agreementStats(p.map(x=>x[0]),p.map(x=>x[1]));if(r){const b=new Blob([JSON.stringify(r,null,2)],{type:'application/json'}),a=document.createElement('a');a.href=URL.createObjectURL(b);a.download='phonacore-agreement.json';a.click()}});
+  on('printReport','click',()=>{const s=state.sessions[0],p=state.patients.find(x=>x.id===s?.patientId),h=store.get('history_'+(p?.id||''),{});if(s)printableReport(s,p,h)});
+  if($('#hygieneProfile')){
+    const renderH=()=>{const p=hygieneProfiles[$('#hygieneProfile').value];if(!p)return;$('#hygieneContent').innerHTML='<h3>'+p.title+'</h3><p class="small">Focus: '+p.focus+'</p><ul class="clean">'+p.items.map(x=>'<li>☐ '+x+'</li>').join('')+'</ul>'};
+    $('#hygieneProfile').addEventListener('change',renderH);renderH();on('printHygiene','click',()=>window.print());
+  }
+  on('saveClinical','click',()=>{
+    if(!state.patient){state.notice='Select a real participant before saving clinical information.';render();return}
+    const id=state.patient.id;
+    const ok=store.set('history_'+id,{concern:$('#chConcern').value,onset:$('#chOnset').value,occupation:$('#chOcc').value,load:$('#chLoad').value,medical:$('#chMedical').value,treatment:$('#chTreatment').value,symptoms:[...document.querySelectorAll('.caseSym:checked')].map(x=>x.value),perceptual:$('#chPerceptual').value,resonance:$('#chResonance').value,impression:$('#chImpression').value,follow:$('#chFollow').value,updatedAt:new Date().toISOString()});
+    state.notice=ok?'Clinical assessment saved locally for '+id:'Clinical assessment could not be saved in browser storage. Check browser storage permissions.';render();
+  });
+  on('printHealth','click',()=>window.print());
+  on('clearHealth','click',()=>document.querySelectorAll('.vocalSymptom,.dailyVoice').forEach(x=>x.checked=false));
+  on('runMdvp','click',runMdvpValidation);
+  on('clearMdvp','click',()=>{$('#mdvpResult').innerHTML=''});
+  on('newA','click',startNewAssessment);
+  on('continueDash','click',()=>{if(state.patient){state.page='Clinical';state.notice='Continue the clinical assessment before recording.';render()}else{startNewAssessment()}});
+  on('patientAssess','click',()=>{auditResearch('Clinical assessment workflow opened');if(!state.patient){state.page='Patients';state.notice='Select a real participant first.'}else if(!state.patient.id||!state.patient.name||!Number.isFinite(Number(state.patient.age))||!state.patient.sex){state.notice='Research gate blocked: complete participant demographics.';state.page='Patients'}else{state.page='Clinical';state.notice='Complete or review the clinical assessment before recording.'}render()});
+  on('continueVoiceLab','click',()=>{if(!state.patient){state.page='Patients';state.notice='Select a real participant first.'}else{state.page='Voice Lab';state.notice='Voice Lab ready for '+(state.patient.name||state.patient.id)+'.'}render()});
+  on('goPatients','click',()=>{state.page='Patients';render()});
+  on('saveParticipant','click',()=>{auditResearch('Participant demographics saved');const id=$('#pId')?.value.trim(),name=$('#pName')?.value.trim(),age=$('#pAge')?.value.trim(),sex=$('#pSex')?.value;if(!id||!name||!age||!sex){state.notice='Enter Participant ID, name, age and sex.';render();return}if(state.patients.some(p=>p.id.toLowerCase()===id.toLowerCase())){state.notice='Participant ID already exists.';render();return}const p={id,name,age:Number(age),sex};state.patients.push(p);if(!store.set('patients',state.patients)){state.patients.pop();state.notice='Participant could not be saved in browser storage. Check browser storage permissions.';render();return}state.patient=p;state.page='Clinical';state.notice='Participant saved locally. Continue with clinical assessment.';render()});
+  document.querySelectorAll('[data-pid]').forEach(x=>x.onclick=()=>{state.patient=state.patients.find(p=>p.id===x.dataset.pid);render()});
+  document.querySelectorAll('[data-research-tool]').forEach(x=>x.onclick=()=>{state.page=x.dataset.researchTool;render()});
+  on('reset','click',()=>{if(state.recording){state.recording=false;cleanupRecording()}if(state.analysisWorker){try{state.analysisWorker.terminate()}catch(_){ }state.analysisWorker=null}state.analysis=null;state.seconds=0;state.notice='Analysis reset.';render()});on('saveSession','click',saveSession);on('printFinalReport','click',()=>{const id=state.pendingRecordingId||state.sessions[0]?.id,s=state.sessions.find(x=>x.id===id)||state.sessions[0];const p=state.patient||state.patients.find(x=>x.id===s?.patientId);const h=store.get('history_'+(p?.id||''),{});if(s)printableReport(s,p,h);else{state.notice='Save the session before generating the PDF.';render()}});
+  on('task','change',e=>{state.voiceTask=e.target.value;state.analysis=null;state.notice='Task set to '+e.target.options[e.target.selectedIndex].text+'.';render()});on('exportJSON','click',()=>{if(state.analysis)download('phonacore-analysis.json',state.analysis);else{state.notice='No analysis to export.';render()}});
+  document.querySelectorAll('[data-report]').forEach(b=>b.onclick=()=>download('phonacore-report.json',state.sessions.find(s=>s.id===b.dataset.report)));
+  on('chooseAudioFolder','click',async()=>{try{if(!window.showDirectoryPicker){state.notice='Folder export is not supported here; use Save file on each recording.';render();return}state.fileDirectory=await window.showDirectoryPicker({mode:'readwrite'});state.notice='Export folder selected.';render()}catch(e){state.notice='Folder selection cancelled.';render()}});
+  document.querySelectorAll('[data-audio-play]').forEach(b=>b.onclick=async()=>{try{const x=await getAudioFile(b.dataset.audioPlay);if(!x?.blob)return;const u=URL.createObjectURL(x.blob),a=new Audio(u);a.onended=()=>URL.revokeObjectURL(u);await a.play()}catch(e){state.notice='Playback failed: '+e.message;render()}});
+  document.querySelectorAll('[data-audio-save]').forEach(b=>b.onclick=async()=>{try{const x=await getAudioFile(b.dataset.audioSave);if(!x?.blob)throw new Error('Recording not found.');const msg=await saveBlobToFolder(x.blob,x.name);state.notice=msg+': '+x.name;render()}catch(e){state.notice='File save failed: '+e.message;render()}});
+  document.querySelectorAll('[data-audio-delete]').forEach(b=>b.onclick=async()=>{if(!confirm('Delete this local recording?'))return;try{await deleteAudioFile(b.dataset.audioDelete);await refreshAudioFiles();state.notice='Recording deleted locally.';render()}catch(e){state.notice='Delete failed: '+e.message;render()}});
+  on('newTele','click',()=>{state.tele={id:'TEL-'+Date.now().toString(36),status:'created',consent:false};render()});
+  on('consent','click',()=>{if(!state.tele)return;state.tele.consent=true;state.tele.status='ready';render()});
+  on('teleNext','click',()=>{if(!state.tele)return;state.tele.status=state.tele.status==='ready'?'active':'completed';render()});
+  on('newExp','click',()=>{state.experiments.unshift({id:'EXP-'+Date.now().toString(36),name:'Voice validation study',createdAt:new Date().toISOString(),researchQuestion:'Compare browser measurements with reference measurements.'});store.set('experiments',state.experiments);$('#researchOut').textContent=JSON.stringify(state.experiments,null,2)});
+  on('createDs','click',()=>{state.datasets.unshift({id:'DS-'+Date.now().toString(36),name:$('#dsname').value,samples:[]});store.set('datasets',state.datasets);render()});
+  on('downloadAll','click',()=>download('phonacore-local-export.json',{patients:state.patients,sessions:state.sessions,datasets:state.datasets,experiments:state.experiments,audioFiles:state.audioFiles.map(x=>({id:x.id,name:x.name,patientId:x.patientId,task:x.task,duration:x.duration,createdAt:x.createdAt})),exportedAt:new Date().toISOString()}));
+  on('clearAllLocal','click',()=>{if(!confirm('Clear all local metadata? Audio files in File Manager are not deleted.'))return;for(const k of ['sessions','patients','datasets','experiments'])localStorage.removeItem('sv_'+k);state.sessions=[];state.patients=[];state.datasets=[];state.experiments=[];state.patient=null;state.notice='Local metadata cleared. Audio files remain in File Manager.';render()});
+}
+function f(x){return Number.isFinite(x)?x.toFixed(2):'—'}
+function download(name,data){try{const a=document.createElement('a'),url=URL.createObjectURL(new Blob([JSON.stringify(data,null,2)],{type:'application/json'}));a.href=url;a.download=name;a.rel='noopener';document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);state.notice='Download prepared: '+name}catch(e){state.notice='Download failed: '+e.message}render()}
+render();
+purgeDemoAudio().then(refreshAudioFiles);
