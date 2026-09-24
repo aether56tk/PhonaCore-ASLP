@@ -1,1 +1,19 @@
-// PhonaCore-ASLP analysis worker: keeps acoustic DSP off the main UI thread.\nself.window=self;\nimportScripts('./dsp.js?build=20260924-dsp-audit-fix2');\nself.onmessage=function(e){\n  try{\n    const d=e.data||{};\n    const pcm=new Float32Array(d.buffer);\n    const sr=Number(d.sr)||44100;\n    const task=d.task||'vowel';\n    const a=self.SV_DSP.analyzeVoiceFast(pcm,sr,task);\n    a.task=task;\n    a.taskMetrics=self.SV_DSP.taskSpecificMetrics(pcm,sr,task);\n    a.measurementStatus.gate=self.SV_DSP.measurementGate(a);\n    a.recordingMeta={sampleRate:sr,channels:1,duration:Number(d.duration)||pcm.length/sr,codec:'PCM/Web Audio'};\n    self.postMessage({ok:true,analysis:a});\n  }catch(err){\n    self.postMessage({ok:false,error:err&&err.message?err.message:String(err)});\n  }\n};\n
+// PhonaCore-ASLP analysis worker: keeps acoustic DSP off the main UI thread.
+self.window=self;
+importScripts('./dsp.js?build=20260924-dsp-accuracy-ux34');
+self.onmessage=function(e){
+  try{
+    const d=e.data||{};
+    const pcm=new Float32Array(d.buffer);
+    const sr=Number(d.sr)||44100;
+    const task=d.task||'vowel';
+    const a=self.SV_DSP.analyzeVoiceFast(pcm,sr,task);
+    a.task=task;
+    a.taskMetrics=self.SV_DSP.taskSpecificMetrics(pcm,sr,task);
+    a.measurementStatus.gate=self.SV_DSP.measurementGate(a);
+    a.recordingMeta={sampleRate:sr,channels:1,duration:Number(d.duration)||pcm.length/sr,codec:'PCM/Web Audio'};
+    self.postMessage({ok:true,analysis:a});
+  }catch(err){
+    self.postMessage({ok:false,error:err&&err.message?err.message:String(err)});
+  }
+};
