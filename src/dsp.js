@@ -57,7 +57,7 @@ export function periodSequenceFeatures(periods){
  * moving-average value across the full window, then average the
  * absolute relative deviation over valid centers.
  */
-export export function mdvpPerturbation(values,window){
+export function mdvpPerturbation(values,window){
   if(!Array.isArray(values)||values.length<window||window<3||window%2===0)return null;
   const half=Math.floor(window/2),overall=mean(values),out=[];
   if(!Number.isFinite(overall)||overall===0)return null;
