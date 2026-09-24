@@ -1,5 +1,5 @@
 /* PhonaCore-ASLP build: 2026-09-23-fix-algorithm-validation */
-window.__PHONACORE_BUILD='2026-09-24-clinical-ux34';
+window.__PHONACORE_BUILD='2026-09-24-clinical-ux35';
 const {analyzeVoice,stats,mean,sd}=window.SV_DSP;
 const $=s=>document.querySelector(s), store={get(k,d){try{const raw=localStorage.getItem('sv_'+k);if(raw!==null)return JSON.parse(raw)}catch(e){}try{const raw=sessionStorage.getItem('sv_'+k);if(raw!==null)return JSON.parse(raw)}catch(e){}return d},set(k,v){const raw=JSON.stringify(v);try{localStorage.setItem('sv_'+k,raw);return true}catch(e){try{sessionStorage.setItem('sv_'+k,raw);return true}catch(_){return false}}}};
 let state={page:'Dashboard',mode:store.get('mode','clinical'),theme:store.get('theme','night'),patient:null,patients:store.get('patients',[]),sessions:store.get('sessions',[]),recording:false,stream:null,recorder:null,chunks:[],pcmChunks:[],pcmProcessor:null,timer:null,seconds:0,analysis:null,tele:null,datasets:store.get('datasets',[]),experiments:store.get('experiments',[]),audioFiles:[],fileDirectory:null,pendingRecordingId:null};
@@ -9,7 +9,7 @@ const cleanedPatients=state.patients.filter(p=>!(demoIds.has(p.id)&&demoNames.ha
 if(cleanedPatients.length!==state.patients.length){state.patients=cleanedPatients;store.set('patients',state.patients)}
 const cleanedSessions=state.sessions.filter(s=>!demoIds.has(s.patientId));
 if(cleanedSessions.length!==state.sessions.length){state.sessions=cleanedSessions;store.set('sessions',state.sessions)}
-const nav=['Dashboard','Patients','Clinical','Voice Lab','Report','MDVP Validation Dashboard','Research Validation Suite','MDVP Fidelity Monitor','DSP Accuracy Lab','Research Lab','Recommendations','File Manager'];
+const nav=['Dashboard','Patients','Clinical','Voice Lab','Report','MDVP Validation Dashboard','Research Validation Suite','MDVP Fidelity Monitor','DSP Accuracy Lab','Research Integrity Gate','Research Lab','Recommendations','File Manager'];
 function navIcon(n){return{Dashboard:'⌂',Patients:'♙',Clinical:'✚','Voice Lab':'〽','Research Lab':'⚗',Recommendations:'♥',Report:'▤','MDVP Validation Dashboard':'▥','File Manager':'▣'}[n]||'•'}function render(){document.body.dataset.theme=state.theme;document.body.innerHTML=`<div class="layout"><aside class="side"><div class="brand"><span class="brandMark">〽</span><span>Phona<span>Core</span><small>ASLP • VOICE RESEARCH</small></span></div><nav class="navList">${nav.map(n=>`<button class="nav ${state.page===n?'active':''}" data-page="${n}"><i>${navIcon(n)}</i><span>${n}</span></button>`).join('')}</nav></aside><main class="main"><div class="top"><span>PhonaCore-ASLP / ${state.page}</span><div class="topActions"><button class="btn primary" id="globalNewAssessment">＋ New assessment</button><button class="btn" id="themeToggle">${state.theme==='night'?'☀ Daylight':'☾ Night'}</button></div></div><section class="content">${page()}</section></main>${state.notice?`<div class="toast">${state.notice}</div>`:''}</div>`;document.querySelectorAll('[data-page]').forEach(b=>b.onclick=()=>{state.page=b.dataset.page;render()});wire()}
 function head(t,s,button=''){return`<div class="head"><h1>${t}</h1>${button}</div>`}function card(t,x){return`<div class="card"><div class="cardhead"><h2>${t}</h2></div>${x}</div>`}function btn(t,id=''){const action=id==='record'?' onclick="window.__PhonaCoreRecord&&window.__PhonaCoreRecord()"':id==='stop'?' onclick="window.__PhonaCoreStop&&window.__PhonaCoreStop()"':'';return`<button type="button" class="btn ${id?'primary':''}" id="${id}"${action}>${t}</button>`}
 function recommendationTrend(sessions){
@@ -56,7 +56,7 @@ function recommendationsPage(){
  card('Next step','<div class="toolbar"><button class="btn primary" onclick="state.page=\'Voice Lab\';render()">Back to report</button><button class="btn" onclick="state.page=\'Clinical\';render()">Open clinical notes</button></div>');
 }
 
-function page(){switch(state.page){case'Validation 2.0':return validationEngine();case'Reliability Lab':return reliabilityLab();case'Validity Lab':return validityLab();case'Algorithm Validation':return algorithmValidation();case'Study Manager & Final QA':return studyManager();case'Batch Research':return batchResearch();case'Study Protocol':return studyProtocol();case'Patients':return patients();case'Clinical':return clinical();case'Voice Lab':return voice();case'Report':return reportPage();case'MDVP Validation Dashboard':return validationDashboard();case'Research Validation Suite':return researchAllLab();case'MDVP Fidelity Monitor':return mdvpFidelityMonitor();case'DSP Accuracy Lab':return accuracyLab();case'Research Lab':return research();case'Recommendations':return recommendationsPage();case'File Manager':return fileManager();case'Datasets':return datasets();case'Statistics':return statistics();case'Security':return security();case'Settings':return settings();default:return dashboard()}}
+function page(){switch(state.page){case'Validation 2.0':return validationEngine();case'Reliability Lab':return reliabilityLab();case'Validity Lab':return validityLab();case'Algorithm Validation':return algorithmValidation();case'Study Manager & Final QA':return studyManager();case'Batch Research':return batchResearch();case'Study Protocol':return studyProtocol();case'Patients':return patients();case'Clinical':return clinical();case'Voice Lab':return voice();case'Report':return reportPage();case'MDVP Validation Dashboard':return validationDashboard();case'Research Validation Suite':return researchAllLab();case'MDVP Fidelity Monitor':return mdvpFidelityMonitor();case'Research Integrity Gate':return researchIntegrityPage();case'DSP Accuracy Lab':return accuracyLab();case'Research Lab':return research();case'Recommendations':return recommendationsPage();case'File Manager':return fileManager();case'Datasets':return datasets();case'Statistics':return statistics();case'Security':return security();case'Settings':return settings();default:return dashboard()}}
 function startNewAssessment(){
   if(state.recording){state.recording=false;cleanupRecording()}
   if(state.analysisWorker){try{state.analysisWorker.terminate()}catch(_){ }state.analysisWorker=null}
@@ -336,6 +336,25 @@ function accuracyLab(){
  card('Accuracy architecture','<div class="grid3"><div class="metric"><span>F0 ground truths</span><b>5</b></div><div class="metric"><span>Regression layer</span><b>READY</b></div><div class="metric"><span>MDVP validation</span><b>SEPARATE</b></div></div>')+
  card('Accuracy boundary','<div class="notice">Do not apply empirical correction factors unless paired experimental data supports them. The MDVP comparison remains a separate paired-recording validation process.</div>');
 }
+
+function researchIntegrityGate(target){
+ const p=state.patient, demo=!!(p&&p.id&&p.name&&Number.isFinite(Number(p.age))&&Number(p.age)>=0&&Number(p.age)<=120&&p.sex);
+ const input=!!(state.analysis?.measurementStatus?.gatePass||state.analysis?.measurementGate?.pass||state.analysis?.measurementStatus?.qualityGatePass);
+ const validation=!!(state.validationReport?.matched>1||state.algorithmValidation?.overallPass);
+ const checks=[['Participant demographics',demo],['Signal/input quality',input],['Accuracy/validation evidence',validation]];
+ const failed=checks.filter(x=>!x[1]);
+ if(failed.length){state.notice='Research gate blocked: '+failed.map(x=>x[0]).join(', ')+'. Complete required records/checks before continuing.';state.page='Final QA';render();return false}
+ return true;
+}
+function researchIntegrityPage(){
+ const p=state.patient, demo=!!(p&&p.id&&p.name&&Number.isFinite(Number(p.age))&&Number(p.age)>=0&&Number(p.age)<=120&&p.sex);
+ const input=!!(state.analysis?.measurementStatus?.gatePass||state.analysis?.measurementGate?.pass||state.analysis?.measurementStatus?.qualityGatePass);
+ const validation=!!(state.validationReport?.matched>1||state.algorithmValidation?.overallPass);
+ return head('Research Integrity Gate','Required completeness and validation checks before advancing research workflow.')+
+ card('Workflow lock','<div class="notice"><b>Do not proceed with incomplete research records.</b> Complete participant demographics, signal quality and validation evidence before advancing.</div>')+
+ card('Pre-flight checks','<div class="tablewrap"><table><thead><tr><th>Requirement</th><th>Status</th></tr></thead><tbody>'+[['Participant demographics',demo],['Signal/input quality',input],['Accuracy / validation evidence',validation]].map(x=>'<tr><td>'+x[0]+'</td><td><b>'+(x[1]?'PASS':'BLOCKED')+'</b></td></tr>').join('')+'</tbody></table></div>')+
+ card('Participant record','<div class="notice">'+(p?escapeHtml(JSON.stringify({id:p.id,name:p.name,age:p.age,sex:p.sex},null,2)):'No participant selected.')+'</div>');
+}
 function mdvpFidelityMonitor(){
  const schema=window.SV_DSP.MDVP_33_PARAMETER_SCHEMA||{}, rows=state.validationReport?.rows||[];
  const core=['F0','Fhi','Flo','STD','Jita','Jitt','RAP','PPQ','sPPQ','vF0','ShdB','Shim','APQ','sAPQ','vAm','NHR'];
@@ -591,7 +610,7 @@ function wire(){
   on('clearMdvp','click',()=>{$('#mdvpResult').innerHTML=''});
   on('newA','click',startNewAssessment);
   on('continueDash','click',()=>{if(state.patient){state.page='Clinical';state.notice='Continue the clinical assessment before recording.';render()}else{startNewAssessment()}});
-  on('patientAssess','click',()=>{if(!state.patient){state.page='Patients';state.notice='Select a real participant first.'}else{state.page='Clinical';state.notice='Complete or review the clinical assessment before recording.'}render()});
+  on('patientAssess','click',()=>{if(!state.patient){state.page='Patients';state.notice='Select a real participant first.'}else if(!state.patient.id||!state.patient.name||!Number.isFinite(Number(state.patient.age))||!state.patient.sex){state.notice='Research gate blocked: complete participant demographics.';state.page='Patients'}else{state.page='Clinical';state.notice='Complete or review the clinical assessment before recording.'}render()});
   on('continueVoiceLab','click',()=>{if(!state.patient){state.page='Patients';state.notice='Select a real participant first.'}else{state.page='Voice Lab';state.notice='Voice Lab ready for '+(state.patient.name||state.patient.id)+'.'}render()});
   on('goPatients','click',()=>{state.page='Patients';render()});
   on('saveParticipant','click',()=>{const id=$('#pId')?.value.trim(),name=$('#pName')?.value.trim(),age=$('#pAge')?.value.trim(),sex=$('#pSex')?.value;if(!id||!name||!age||!sex){state.notice='Enter Participant ID, name, age and sex.';render();return}if(state.patients.some(p=>p.id.toLowerCase()===id.toLowerCase())){state.notice='Participant ID already exists.';render();return}const p={id,name,age:Number(age),sex};state.patients.push(p);if(!store.set('patients',state.patients)){state.patients.pop();state.notice='Participant could not be saved in browser storage. Check browser storage permissions.';render();return}state.patient=p;state.page='Clinical';state.notice='Participant saved locally. Continue with clinical assessment.';render()});
