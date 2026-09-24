@@ -162,3 +162,28 @@ PhonaCore-ASLP/
 ## Important
 
 PhonaCore-ASLP is software for Audiology and Speech-Language Pathology workflows. Acoustic results and other outputs should be interpreted by appropriately trained users within the intended workflow and study context.
+
+## Dual-interface architecture (UX41)
+
+PhonaCore opens with two role-based interfaces.
+
+### Clinician
+- Dashboard
+- Patient Assessment
+- Voice Lab
+- Report
+- Recommendations
+- Research Console for advanced research and validation tools
+
+### Patient / Other User
+- Demographics
+- Voice Lab
+- Simplified Report with PASS / FAIL / REVIEW reference status
+- Recommendations
+- Voice Hygiene self-check
+
+The patient-facing PASS/FAIL is a configured acoustic-reference screen, not a diagnosis. The full research/validation engine remains clinician-facing.
+
+## Measurement documentation
+
+See `docs/measurement-documentation.md` for the study title, background, aim, objectives, purpose, parameter-by-parameter measurement registry, configured references, interpretation boundaries and data-source documentation rules.
