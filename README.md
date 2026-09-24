@@ -83,6 +83,28 @@ The research section provides software tools for:
 - Reproducibility metadata
 - Exportable research reports
 
+## MDVP-oriented parameter specification
+
+PhonaCore's MDVP-oriented perturbation targets use the **KayPENTAX Multi-Dimensional Voice Program (MDVP) Model 5105 Software Instruction Manual, Issue E (June 2008)** as the reference specification for parameter naming and smoothing-window defaults. The implementation is explicitly research-oriented and does **not** claim equivalence with MDVP without paired empirical validation.
+
+| MDVP parameter | Definition / formula basis used by PhonaCore | Window / default | Unit | PhonaCore implementation |
+|---|---|---:|---|---|
+| RAP | Relative Average Perturbation of pitch period | 3 periods | % | Extracted pitch-period sequence + 3-period moving-average perturbation |
+| PPQ | Pitch Period Perturbation Quotient | 5 periods | % | Extracted pitch-period sequence + 5-period moving-average perturbation |
+| sPPQ | Smoothed Pitch Period Perturbation Quotient | 55 periods default | % | Extracted pitch-period sequence + configurable-window perturbation target |
+| vF0 | Relative SD of fundamental frequency | Full analyzed sample | % | 100 × SD(F0) / mean(F0) |
+| APQ | Amplitude Perturbation Quotient using peak-to-peak amplitude | 11 periods | % | Extracted period-level peak-to-peak amplitude + 11-period moving-average perturbation |
+| sAPQ | Smoothed Amplitude Perturbation Quotient | 55 periods default | % | Extracted period-level peak-to-peak amplitude + configurable-window perturbation target |
+| vAm | Coefficient of Amplitude Variation | Full analyzed sample | % | 100 × SD(peak-to-peak amplitude) / mean(peak-to-peak amplitude) |
+
+### Implementation correction
+
+The previous prototype used short-time RMS frame amplitude for APQ/sAPQ/vAm and used a local moving-average denominator. The current implementation instead uses **extracted pitch-period records and peak-to-peak amplitude**, with the global mean amplitude as the relative reference for the perturbation quotient. This change is intended to align the implementation more closely with the MDVP parameter definitions and avoid conflating frame-level RMS variation with period-level peak-to-peak amplitude variation.
+
+The MDVP manual metadata and parameter documentation were checked against the available Issue E June 2008 manual copy; published literature also corroborates the 3/5/55-period pitch windows and 11/55-period amplitude windows.
+
+**Reference:** KayPENTAX, *Multi-Dimensional Voice Program (MDVP) Model 5105 Software Instruction Manual*, Issue E, June 2008, Control No. 5151-0500.
+
 ## Local development
 
 Requires Node.js 20 or later.
