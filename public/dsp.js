@@ -157,7 +157,9 @@ function spectralNoise(samples,sr,f0){
     if(isH&&hz<=4500){harm+=e;if(hz<=1600)lowH+=e;if(hz>=1600)highH+=e}
     if(!isH&&hz>=1500&&hz<=4500)highNon+=e;
   }
-  return{nhr:harm?highNon/harm:null,vti:harm?highNon/harm:null,spi:highH?lowH/highH:null};
+  const total=Math.max(1,harm);
+  const minHighEnergy=total*1e-7;
+  return{nhr:harm?highNon/harm:null,vti:harm?highNon/harm:null,spi:highH>minHighEnergy?lowH/highH:null};
 }
 function spectralCepstrumCPP(samples,sr){
   const n=2048;if(samples.length<n)return null;let best=-Infinity;
@@ -179,10 +181,14 @@ function spectralCepstrumCPP(samples,sr){
 function analyzeVoiceFast(samples,sr,task='vowel'){
   const originalDurationSec=samples.length/sr;
   let work=samples;
-  if((task==='vowel'||task==='mpt')&&originalDurationSec>3){
-    const keep=Math.min(samples.length,Math.round(sr*3));
-    const start=Math.max(0,Math.floor((samples.length-keep)/2));
-    work=samples.slice(start,start+keep);
+  if((task==='vowel'||task==='mpt')&&originalDurationSec>1.2){
+    const trim=Math.min(Math.round(sr*.3),Math.floor(samples.length*.15));
+    const steadyEnd=samples.length-trim;
+    work=samples.slice(trim,Math.max(trim+1,steadyEnd));
+    if(work.length>Math.round(sr*3)){
+      const keep=Math.round(sr*3),start=Math.floor((work.length-keep)/2);
+      work=work.slice(start,start+keep);
+    }
   }
   const clean=normalize(removeDC(work)),durationSec=work.length/sr;
   const track=pitchTrack(clean,sr),voiced=track.filter(x=>Number.isFinite(x.f0)),f0s=voiced.map(x=>x.f0);
