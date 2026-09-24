@@ -187,3 +187,14 @@ The patient-facing PASS/FAIL is a configured acoustic-reference screen, not a di
 ## Measurement documentation
 
 See `docs/measurement-documentation.md` for the study title, background, aim, objectives, purpose, parameter-by-parameter measurement registry, configured references, interpretation boundaries and data-source documentation rules.
+
+## Research documentation
+
+The complete pre-data-collection documentation is stored in the repository:
+
+- **[VOICE_MEASUREMENT_DOCUMENTATION.md](docs/VOICE_MEASUREMENT_DOCUMENTATION.md)** — title, background, aim, objectives, purpose, all 33 measurements, what each measures, why it is measured, unit, configured/reference value, interpretation boundary and data source.
+- **[MDVP_REFERENCE_AND_VALIDATION.md](docs/MDVP_REFERENCE_AND_VALIDATION.md)** — MDVP acquisition framework, core 16, paired-WAV methodology and validation targets.
+- **[DOCTOR_SPEECH_DATA_SOURCE.md](docs/DOCTOR_SPEECH_DATA_SOURCE.md)** — doctor/clinician speech collection and metadata specification.
+- **[EXTERNAL_VOICE_DATA_SOURCE_REGISTRY.md](docs/EXTERNAL_VOICE_DATA_SOURCE_REGISTRY.md)** — provenance and permission registry for MDVP, doctor speech and external datasets.
+
+**Data-collection rule:** no human research collection should begin until the measurement registry, protocol, source documentation, data-governance requirements, analysis build and quality/validation workflow are complete.
