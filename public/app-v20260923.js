@@ -1,15 +1,15 @@
 /* PhonaCore-ASLP build: 2026-09-23-fix-algorithm-validation */
-window.__PHONACORE_BUILD='2026-09-24-clinical-ux35';
+window.__PHONACORE_BUILD='2026-09-24-clinical-ux36';
 const {analyzeVoice,stats,mean,sd}=window.SV_DSP;
 const $=s=>document.querySelector(s), store={get(k,d){try{const raw=localStorage.getItem('sv_'+k);if(raw!==null)return JSON.parse(raw)}catch(e){}try{const raw=sessionStorage.getItem('sv_'+k);if(raw!==null)return JSON.parse(raw)}catch(e){}return d},set(k,v){const raw=JSON.stringify(v);try{localStorage.setItem('sv_'+k,raw);return true}catch(e){try{sessionStorage.setItem('sv_'+k,raw);return true}catch(_){return false}}}};
-let state={page:'Dashboard',mode:store.get('mode','clinical'),theme:store.get('theme','night'),patient:null,patients:store.get('patients',[]),sessions:store.get('sessions',[]),recording:false,stream:null,recorder:null,chunks:[],pcmChunks:[],pcmProcessor:null,timer:null,seconds:0,analysis:null,tele:null,datasets:store.get('datasets',[]),experiments:store.get('experiments',[]),audioFiles:[],fileDirectory:null,pendingRecordingId:null};
+let state={page:'Dashboard',researchAudit:store.get('researchAudit',[]),mode:store.get('mode','clinical'),theme:store.get('theme','night'),patient:null,patients:store.get('patients',[]),sessions:store.get('sessions',[]),recording:false,stream:null,recorder:null,chunks:[],pcmChunks:[],pcmProcessor:null,timer:null,seconds:0,analysis:null,tele:null,datasets:store.get('datasets',[]),experiments:store.get('experiments',[]),audioFiles:[],fileDirectory:null,pendingRecordingId:null};
 const demoIds=new Set(['P-001','P-002','P-003']);
 const demoNames=new Set(['Patient Alpha','Patient Beta','Patient Gamma']);
 const cleanedPatients=state.patients.filter(p=>!(demoIds.has(p.id)&&demoNames.has(p.name)));
 if(cleanedPatients.length!==state.patients.length){state.patients=cleanedPatients;store.set('patients',state.patients)}
 const cleanedSessions=state.sessions.filter(s=>!demoIds.has(s.patientId));
 if(cleanedSessions.length!==state.sessions.length){state.sessions=cleanedSessions;store.set('sessions',state.sessions)}
-const nav=['Dashboard','Patients','Clinical','Voice Lab','Report','MDVP Validation Dashboard','Research Validation Suite','MDVP Fidelity Monitor','DSP Accuracy Lab','Research Integrity Gate','Research Lab','Recommendations','File Manager'];
+const nav=['Dashboard','Patients','Clinical','Voice Lab','Report','Research Wizard','Research Audit Trail','MDVP Validation Dashboard','Research Validation Suite','MDVP Fidelity Monitor','DSP Accuracy Lab','Research Integrity Gate','Research Lab','Recommendations','File Manager'];
 function navIcon(n){return{Dashboard:'⌂',Patients:'♙',Clinical:'✚','Voice Lab':'〽','Research Lab':'⚗',Recommendations:'♥',Report:'▤','MDVP Validation Dashboard':'▥','File Manager':'▣'}[n]||'•'}function render(){document.body.dataset.theme=state.theme;document.body.innerHTML=`<div class="layout"><aside class="side"><div class="brand"><span class="brandMark">〽</span><span>Phona<span>Core</span><small>ASLP • VOICE RESEARCH</small></span></div><nav class="navList">${nav.map(n=>`<button class="nav ${state.page===n?'active':''}" data-page="${n}"><i>${navIcon(n)}</i><span>${n}</span></button>`).join('')}</nav></aside><main class="main"><div class="top"><span>PhonaCore-ASLP / ${state.page}</span><div class="topActions"><button class="btn primary" id="globalNewAssessment">＋ New assessment</button><button class="btn" id="themeToggle">${state.theme==='night'?'☀ Daylight':'☾ Night'}</button></div></div><section class="content">${page()}</section></main>${state.notice?`<div class="toast">${state.notice}</div>`:''}</div>`;document.querySelectorAll('[data-page]').forEach(b=>b.onclick=()=>{state.page=b.dataset.page;render()});wire()}
 function head(t,s,button=''){return`<div class="head"><h1>${t}</h1>${button}</div>`}function card(t,x){return`<div class="card"><div class="cardhead"><h2>${t}</h2></div>${x}</div>`}function btn(t,id=''){const action=id==='record'?' onclick="window.__PhonaCoreRecord&&window.__PhonaCoreRecord()"':id==='stop'?' onclick="window.__PhonaCoreStop&&window.__PhonaCoreStop()"':'';return`<button type="button" class="btn ${id?'primary':''}" id="${id}"${action}>${t}</button>`}
 function recommendationTrend(sessions){
@@ -56,7 +56,7 @@ function recommendationsPage(){
  card('Next step','<div class="toolbar"><button class="btn primary" onclick="state.page=\'Voice Lab\';render()">Back to report</button><button class="btn" onclick="state.page=\'Clinical\';render()">Open clinical notes</button></div>');
 }
 
-function page(){switch(state.page){case'Validation 2.0':return validationEngine();case'Reliability Lab':return reliabilityLab();case'Validity Lab':return validityLab();case'Algorithm Validation':return algorithmValidation();case'Study Manager & Final QA':return studyManager();case'Batch Research':return batchResearch();case'Study Protocol':return studyProtocol();case'Patients':return patients();case'Clinical':return clinical();case'Voice Lab':return voice();case'Report':return reportPage();case'MDVP Validation Dashboard':return validationDashboard();case'Research Validation Suite':return researchAllLab();case'MDVP Fidelity Monitor':return mdvpFidelityMonitor();case'Research Integrity Gate':return researchIntegrityPage();case'DSP Accuracy Lab':return accuracyLab();case'Research Lab':return research();case'Recommendations':return recommendationsPage();case'File Manager':return fileManager();case'Datasets':return datasets();case'Statistics':return statistics();case'Security':return security();case'Settings':return settings();default:return dashboard()}}
+function page(){switch(state.page){case'Validation 2.0':return validationEngine();case'Reliability Lab':return reliabilityLab();case'Validity Lab':return validityLab();case'Algorithm Validation':return algorithmValidation();case'Study Manager & Final QA':return studyManager();case'Batch Research':return batchResearch();case'Study Protocol':return studyProtocol();case'Patients':return patients();case'Clinical':return clinical();case'Voice Lab':return voice();case'Report':return reportPage();case'MDVP Validation Dashboard':return validationDashboard();case'Research Validation Suite':return researchAllLab();case'MDVP Fidelity Monitor':return mdvpFidelityMonitor();case'Research Integrity Gate':return researchIntegrityPage();case'DSP Accuracy Lab':return accuracyLab();case'Research Wizard':return researchWizard();case'Research Audit Trail':return researchAuditTrail();case'Research Lab':return research();case'Recommendations':return recommendationsPage();case'File Manager':return fileManager();case'Datasets':return datasets();case'Statistics':return statistics();case'Security':return security();case'Settings':return settings();default:return dashboard()}}
 function startNewAssessment(){
   if(state.recording){state.recording=false;cleanupRecording()}
   if(state.analysisWorker){try{state.analysisWorker.terminate()}catch(_){ }state.analysisWorker=null}
@@ -355,6 +355,37 @@ function researchIntegrityPage(){
  card('Pre-flight checks','<div class="tablewrap"><table><thead><tr><th>Requirement</th><th>Status</th></tr></thead><tbody>'+[['Participant demographics',demo],['Signal/input quality',input],['Accuracy / validation evidence',validation]].map(x=>'<tr><td>'+x[0]+'</td><td><b>'+(x[1]?'PASS':'BLOCKED')+'</b></td></tr>').join('')+'</tbody></table></div>')+
  card('Participant record','<div class="notice">'+(p?escapeHtml(JSON.stringify({id:p.id,name:p.name,age:p.age,sex:p.sex},null,2)):'No participant selected.')+'</div>');
 }
+
+function researchWizard(){
+ const p=state.patient, a=state.analysis, vr=state.validationReport, qa=state.finalQa;
+ const steps=[
+  ['01','Participant demographics',!!(p&&p.id&&p.name&&Number.isFinite(Number(p.age))&&Number(p.age)>=0&&Number(p.age)<=120&&p.sex),'ID, name, age and sex'],
+  ['02','Research documentation',!!state.studyManifest?.protocolVersion,'Study/protocol metadata'],
+  ['03','Recording acquisition',!!a,'Recording/analysis record'],
+  ['04','Signal quality',!!(a?.measurementStatus?.gatePass||a?.measurementGate?.pass||a?.measurementStatus?.qualityGatePass),'Signal quality gate'],
+  ['05','Acoustic analysis',!!a,'Analysis completed'],
+  ['06','Paired validation',!!(vr?.matched>1),'Paired PhonaCore/MDVP evidence'],
+  ['07','Final QA',!!qa?.ready,'All final QA checks passed']
+ ];
+ const complete=steps.filter(x=>x[2]).length, blocked=steps.filter(x=>!x[2]);
+ return head('Research Data Collection Wizard','Gated research workflow. Incomplete records remain blocked from research-ready status.')+
+ card('Workflow progress','<div class="grid3"><div class="metric"><span>Completed</span><b>'+complete+'/'+steps.length+'</b></div><div class="metric"><span>Blocked</span><b>'+blocked.length+'</b></div><div class="metric"><span>Research status</span><b>'+(blocked.length?'BLOCKED':'RESEARCH READY')+'</b></div></div>')+
+ card('Required workflow','<div class="tablewrap"><table><thead><tr><th>Step</th><th>Requirement</th><th>Status</th><th>Required evidence</th></tr></thead><tbody>'+steps.map(x=>'<tr><td>'+x[0]+'</td><td><b>'+x[1]+'</b></td><td><span class="statusPill '+(x[2]?'complete':'draft')+'">'+(x[2]?'PASS':'BLOCKED')+'</span></td><td>'+x[3]+'</td></tr>').join('')+'</tbody></table></div>')+
+ card('Missing requirements',blocked.length?'<ul>'+blocked.map(x=>'<li><b>'+x[1]+'</b> — '+x[3]+'</li>').join('')+'</ul>':'<div class="notice">All currently configured workflow gates are complete.</div>')+
+ card('Integrity rule','<div class="notice"><b>Do not treat a blocked record as research-ready.</b> Complete the missing participant, protocol, acquisition, signal-quality, validation, or QA evidence first.</div>');
+}
+function researchAuditTrail(){
+ const events=state.researchAudit||[];
+ return head('Research Audit Trail','Chronological record of important research workflow events.')+
+ card('Audit status','<div class="grid2"><div class="metric"><span>Events</span><b>'+events.length+'</b></div><div class="metric"><span>Current build</span><b>'+window.__PHONACORE_BUILD+'</b></div></div>')+
+ card('Event log',events.length?'<div class="tablewrap"><table><thead><tr><th>Time</th><th>Event</th><th>Participant</th><th>Build</th></tr></thead><tbody>'+events.slice().reverse().map(e=>'<tr><td>'+e.time+'</td><td>'+e.event+'</td><td>'+escapeHtml(e.participant||'—')+'</td><td>'+e.build+'</td></tr>').join('')+'</tbody></table></div>':'<div class="empty">No research audit events recorded yet.</div>');
+}
+function auditResearch(event){
+ state.researchAudit=state.researchAudit||[];
+ state.researchAudit.push({time:new Date().toISOString(),event,participant:state.patient?.id||'',build:window.__PHONACORE_BUILD});
+ if(state.researchAudit.length>500)state.researchAudit=state.researchAudit.slice(-500);
+ store.set('researchAudit',state.researchAudit);
+}
 function mdvpFidelityMonitor(){
  const schema=window.SV_DSP.MDVP_33_PARAMETER_SCHEMA||{}, rows=state.validationReport?.rows||[];
  const core=['F0','Fhi','Flo','STD','Jita','Jitt','RAP','PPQ','sPPQ','vF0','ShdB','Shim','APQ','sAPQ','vAm','NHR'];
@@ -610,10 +641,10 @@ function wire(){
   on('clearMdvp','click',()=>{$('#mdvpResult').innerHTML=''});
   on('newA','click',startNewAssessment);
   on('continueDash','click',()=>{if(state.patient){state.page='Clinical';state.notice='Continue the clinical assessment before recording.';render()}else{startNewAssessment()}});
-  on('patientAssess','click',()=>{if(!state.patient){state.page='Patients';state.notice='Select a real participant first.'}else if(!state.patient.id||!state.patient.name||!Number.isFinite(Number(state.patient.age))||!state.patient.sex){state.notice='Research gate blocked: complete participant demographics.';state.page='Patients'}else{state.page='Clinical';state.notice='Complete or review the clinical assessment before recording.'}render()});
+  on('patientAssess','click',()=>{auditResearch('Clinical assessment workflow opened');if(!state.patient){state.page='Patients';state.notice='Select a real participant first.'}else if(!state.patient.id||!state.patient.name||!Number.isFinite(Number(state.patient.age))||!state.patient.sex){state.notice='Research gate blocked: complete participant demographics.';state.page='Patients'}else{state.page='Clinical';state.notice='Complete or review the clinical assessment before recording.'}render()});
   on('continueVoiceLab','click',()=>{if(!state.patient){state.page='Patients';state.notice='Select a real participant first.'}else{state.page='Voice Lab';state.notice='Voice Lab ready for '+(state.patient.name||state.patient.id)+'.'}render()});
   on('goPatients','click',()=>{state.page='Patients';render()});
-  on('saveParticipant','click',()=>{const id=$('#pId')?.value.trim(),name=$('#pName')?.value.trim(),age=$('#pAge')?.value.trim(),sex=$('#pSex')?.value;if(!id||!name||!age||!sex){state.notice='Enter Participant ID, name, age and sex.';render();return}if(state.patients.some(p=>p.id.toLowerCase()===id.toLowerCase())){state.notice='Participant ID already exists.';render();return}const p={id,name,age:Number(age),sex};state.patients.push(p);if(!store.set('patients',state.patients)){state.patients.pop();state.notice='Participant could not be saved in browser storage. Check browser storage permissions.';render();return}state.patient=p;state.page='Clinical';state.notice='Participant saved locally. Continue with clinical assessment.';render()});
+  on('saveParticipant','click',()=>{auditResearch('Participant demographics saved');const id=$('#pId')?.value.trim(),name=$('#pName')?.value.trim(),age=$('#pAge')?.value.trim(),sex=$('#pSex')?.value;if(!id||!name||!age||!sex){state.notice='Enter Participant ID, name, age and sex.';render();return}if(state.patients.some(p=>p.id.toLowerCase()===id.toLowerCase())){state.notice='Participant ID already exists.';render();return}const p={id,name,age:Number(age),sex};state.patients.push(p);if(!store.set('patients',state.patients)){state.patients.pop();state.notice='Participant could not be saved in browser storage. Check browser storage permissions.';render();return}state.patient=p;state.page='Clinical';state.notice='Participant saved locally. Continue with clinical assessment.';render()});
   document.querySelectorAll('[data-pid]').forEach(x=>x.onclick=()=>{state.patient=state.patients.find(p=>p.id===x.dataset.pid);render()});
   document.querySelectorAll('[data-research-tool]').forEach(x=>x.onclick=()=>{state.page=x.dataset.researchTool;render()});
   on('reset','click',()=>{if(state.recording){state.recording=false;cleanupRecording()}if(state.analysisWorker){try{state.analysisWorker.terminate()}catch(_){ }state.analysisWorker=null}state.analysis=null;state.seconds=0;state.notice='Analysis reset.';render()});on('saveSession','click',saveSession);on('printFinalReport','click',()=>{const id=state.pendingRecordingId||state.sessions[0]?.id,s=state.sessions.find(x=>x.id===id)||state.sessions[0];const p=state.patient||state.patients.find(x=>x.id===s?.patientId);const h=store.get('history_'+(p?.id||''),{});if(s)printableReport(s,p,h);else{state.notice='Save the session before generating the PDF.';render()}});
