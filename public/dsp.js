@@ -216,9 +216,9 @@ function analyzeVoice(samples,sr){
   return {
     sampleRate:sr,durationSec:duration,f0Mean,f0Median:median(f0s),f0Min,f0Max,f0Sd:sd(f0s),
     pfrSemitones:f0Min&&f0Max?12*Math.log2(f0Max/f0Min):null,
-    jitaUs:periodPf.jitaUs,jitterLocalPct:periodPf.jittPct,jittPct:periodPf.jittPct,rapPct:periodPf.rapPct,ppqPct:periodPf.ppqPct,
-    sppqPct:periodPf.sppqPct,vf0Pct:periodPf.vf0Pct,t0Ms:periodPf.t0Ms,
-    shimmerLocalPct:periodAf.shimPct,shimPct:periodAf.shimPct,shdB:periodAf.shdB,apqPct:periodAf.apqPct,sapqPct:periodAf.sapqPct,vamPct:periodAf.vamPct,
+    jitaUs:pf.jitaUs,jitterLocalPct:pf.jittPct,jittPct:pf.jittPct,rapPct:pf.rapPct,ppqPct:pf.ppqPct,
+    sppqPct:pf.sppqPct,vf0Pct:pf.vf0Pct,t0Ms:pf.t0Ms,
+    shimmerLocalPct:af.shimPct,shimPct:af.shimPct,shdB:af.shdB,apqPct:af.apqPct,sapqPct:af.sapqPct,vamPct:af.vamPct,
     nhr:noise.nhr,vti:noise.vti,spi:noise.spi,cppPrototypeDb:cpp,voicedPct,clippedPct:clipped,
     rmsDb:20*Math.log10(Math.max(r,1e-9)),peakDb:20*Math.log10(Math.max(p,1e-9)),
     quality:{score:quality,label:quality>=80?'Good':quality>=60?'Review':'Poor',issues:[...(clipped>1?['Clipping detected']:[]),...(voicedPct<30?['Low voiced-frame proportion']:[]),...(duration<2?['Short recording']:[])]},
