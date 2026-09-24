@@ -1,5 +1,5 @@
 /* PhonaCore-ASLP analysis worker */
-importScripts('./public/dsp.js?build=20260924-dsp-audit-fix3');
+importScripts('./public/dsp.js?build=20260924-dsp-audit-fix4');
 self.onmessage=function(e){
   try{
     const d=e.data||{};
