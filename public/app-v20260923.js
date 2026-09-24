@@ -1,5 +1,5 @@
 /* PhonaCore-ASLP build: 2026-09-23-fix-algorithm-validation */
-window.__PHONACORE_BUILD='2026-09-24-clinical-ux29';
+window.__PHONACORE_BUILD='2026-09-24-clinical-ux30';
 const {analyzeVoice,stats,mean,sd}=window.SV_DSP;
 const $=s=>document.querySelector(s), store={get(k,d){try{const raw=localStorage.getItem('sv_'+k);if(raw!==null)return JSON.parse(raw)}catch(e){}try{const raw=sessionStorage.getItem('sv_'+k);if(raw!==null)return JSON.parse(raw)}catch(e){}return d},set(k,v){const raw=JSON.stringify(v);try{localStorage.setItem('sv_'+k,raw);return true}catch(e){try{sessionStorage.setItem('sv_'+k,raw);return true}catch(_){return false}}}};
 let state={page:'Dashboard',mode:store.get('mode','clinical'),theme:store.get('theme','night'),patient:null,patients:store.get('patients',[]),sessions:store.get('sessions',[]),recording:false,stream:null,recorder:null,chunks:[],pcmChunks:[],pcmProcessor:null,timer:null,seconds:0,analysis:null,tele:null,datasets:store.get('datasets',[]),experiments:store.get('experiments',[]),audioFiles:[],fileDirectory:null,pendingRecordingId:null};
@@ -475,7 +475,7 @@ function wire(){
       const mdvp=parseCsv(await mf.text());
       const data=pairedValidation(phona,mdvp);
       const report=validationReport(data);
-      state.validationReport={generatedAt:new Date().toISOString(),rows:report,matched:data.rows.filter(x=>x.phona).length,totalReference:data.rows.length,duplicates:data.duplicateIds};
+      state.validationReport={generatedAt:new Date().toISOString(),rows:report,matched:data.rows.filter(x=>x.phona).length,totalReference:data.rows.length,duplicates:data.duplicateIds};state.validationCache={report,pairedN:state.validationReport.matched};
       $('#valStatus').textContent='Matched '+state.validationReport.matched+' of '+state.validationReport.totalReference+' reference rows.';
       $('#valTable').innerHTML='<div style="overflow:auto"><table><thead><tr><th>Parameter</th><th>N</th><th>Bias</th><th>MAE</th><th>RMSE</th><th>LoA 95%</th><th>CCC</th><th>ICC(3,1)</th><th>Status</th></tr></thead><tbody>'+report.map(x=>'<tr><td>'+x.parameter+'</td><td>'+x.n+'</td><td>'+f(x.bias)+'</td><td>'+f(x.mae)+'</td><td>'+f(x.rmse)+'</td><td>'+f(x.loa95?.[0])+' to '+f(x.loa95?.[1])+'</td><td>'+f(x.ccc)+'</td></tr>').join('')+'</tbody></table></div>';
       $('#valMeta').textContent=JSON.stringify({generatedAt:state.validationReport.generatedAt,phonacoreFile:pf.name,mdvpFile:mf.name,matched:state.validationReport.matched,totalReference:state.validationReport.totalReference,duplicates:state.validationReport.duplicates,method:'paired sample_id; bias/MAE/RMSE/Bland–Altman LoA/CCC'},null,2); validationCharts(data,report);
