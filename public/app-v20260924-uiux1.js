@@ -64,18 +64,47 @@ function roleSelection(){
 }
 function patientReportPage(){
  const m=state.analysis||[...state.sessions].filter(s=>s.patientId===state.patient?.id&&s.status==='completed').sort((a,b)=>new Date(b.createdAt||0)-new Date(a.createdAt||0))[0]?.m;
- if(!m)return head('Voice Report','Your simplified voice report.')+card('No analysis yet','<div class="empty">Complete a Voice Lab recording first.</div>');
- const rules=[['Jitt','jittPct',1.040,'%'],['RAP','rapPct',0.680,'%'],['PPQ','ppqPct',0.840,'%'],['sPPQ','sppqPct',1.020,'%'],['vF0','vf0Pct',1.100,'%'],['ShdB','shdB',0.350,'dB'],['Shim','shimPct',3.810,'%'],['APQ','apqPct',3.070,'%'],['sAPQ','sapqPct',4.230,'%'],['vAm','vamPct',8.200,'%'],['NHR','nhr',0.190,'ratio'],['VTI','vti',0.061,'ratio'],['SPI','spi',14.120,'ratio']];
+ if(!m)return head('Voice Report','Your simplified patient-facing voice report.')+card('No completed analysis yet','<div class="empty"><b>Record a voice sample first.</b><br>Once the recording has been analyzed, the configured screening outcome and measurement summary will appear here.</div>');
+ const rules=[
+  ['Jitt','jittPct',1.040,'%'],['RAP','rapPct',0.680,'%'],['PPQ','ppqPct',0.840,'%'],
+  ['sPPQ','sppqPct',1.020,'%'],['vF0','vf0Pct',1.100,'%'],['ShdB','shdB',0.350,'dB'],
+  ['Shim','shimPct',3.810,'%'],['APQ','apqPct',3.070,'%'],['sAPQ','sapqPct',4.230,'%'],
+  ['vAm','vamPct',8.200,'%'],['NHR','nhr',0.190,'ratio'],['VTI','vti',0.061,'ratio'],['SPI','spi',14.120,'ratio']
+ ];
  const applicable=rules.filter(x=>Number.isFinite(Number(m[x[1]])));
  const failed=applicable.filter(x=>Number(m[x[1]])>x[2]);
  const gate=m.measurementStatus?.gate||window.SV_DSP?.measurementGate?.(m);
- const status=!applicable.length||gate?.overall==='limited'?'REVIEW':failed.length?'FAIL':'PASS';
- const why='<div class="reportExplain"><b>What are we measuring?</b><p>Voice frequency, cycle-to-cycle frequency variation, amplitude variation and noise-related measures are examined from the recorded voice sample.</p><b>Why?</b><p>These measures provide objective acoustic information about the recorded voice. They should be interpreted together with the recording quality, history and clinical assessment.</p><b>How is PASS/FAIL determined?</b><p>The screen compares applicable measurements with the configured reference thresholds. It is not a diagnosis and the reference values are not universal for every person, recording task or device.</p></div>';
- return head('Voice Report','Simple patient-facing result.')+
- card('Overall result','<div class="result '+status.toLowerCase()+'"><span>'+status+'</span><small>'+(status==='PASS'?'All applicable configured reference checks were within threshold.':status==='FAIL'?'One or more configured reference checks were above threshold.':'The recording/data are insufficient for a reliable pass/fail screen.')+'</small></div>')+
+ const limited=gate?.overall==='limited'||!applicable.length;
+ const status=limited?'REVIEW':failed.length?'FAIL':'PASS';
+ const statusTitle=status==='PASS'?'PASS':status==='FAIL'?'FAIL':'REVIEW';
+ const statusText=status==='PASS'
+  ?'All applicable configured reference checks were within the selected screening thresholds.'
+  :status==='FAIL'
+  ?'One or more configured reference checks were above the selected screening thresholds.'
+  :'The recording or available measurements are insufficient for a reliable configured screening result.';
+ const statusNote=status==='PASS'
+  ?'No configured reference check was exceeded in this assessment.'
+  :status==='FAIL'
+  ?'This is a screening/reference result, not a diagnosis. A flagged measure should be interpreted with recording quality, history and clinical assessment.'
+  :'Repeat or review the recording before treating the result as a screening outcome.';
+ const qualityScore=Number(m.quality?.score);
+ const qualityLabel=Number.isFinite(qualityScore)?(qualityScore>=80?'Good':qualityScore>=60?'Review':'Limited'):'Not scored';
+ const patientName=state.patient?.name||'Client';
+ const checked=applicable.length;
+ const why='<div class="patientExplain"><div><b>What was checked?</b><p>Fundamental frequency, frequency perturbation, amplitude perturbation and noise-related measures from the recorded voice sample.</p></div><div><b>How was the result determined?</b><p>Applicable measurements were compared with the configured PhonaCore reference values for this screening workflow.</p></div><div><b>What does PASS or FAIL mean?</b><p>PASS means no applicable configured reference was exceeded. FAIL means one or more configured references were exceeded. Neither result is a diagnosis or proof that a voice disorder is present or absent.</p></div></div>';
+ const failedRows=failed.length
+  ?'<div class="tablewrap"><table class="patientResultTable"><thead><tr><th>Measure</th><th>Observed</th><th>Configured reference</th><th>Status</th></tr></thead><tbody>'+failed.map(x=>'<tr><td><b>'+x[0]+'</b></td><td>'+f(Number(m[x[1]]))+' '+x[3]+'</td><td>≤ '+x[2]+' '+x[3]+'</td><td><span class="statusChip fail">Above reference</span></td></tr>').join('')+'</tbody></table></div>'
+  :'<div class="empty compact"><b>No flagged measurements.</b><br>None of the applicable configured references were exceeded.</div>';
+ return head('Patient Voice Report','Final screening summary for '+patientName+'.')+
+ '<section class="patientReportHero '+status.toLowerCase()+'"><div class="patientReportHeroCopy"><span class="eyebrow">PHONACORE • SCREENING SUMMARY</span><div class="patientReportTitleRow"><h2>Client screening result</h2><span class="statusChip '+status.toLowerCase()+'">'+statusTitle+'</span></div><p>'+statusText+'</p><small>'+statusNote+'</small></div><div class="patientStatusBadge '+status.toLowerCase()+'"><span>'+statusTitle+'</span><small>'+checked+' checks</small></div></section>'+
+ card('Assessment snapshot','<div class="patientSnapshot"><div><span>Client</span><b>'+patientName+'</b></div><div><span>Task</span><b>'+String(m.task||'Sustained vowel')+'</b></div><div><span>Signal quality</span><b>'+qualityLabel+(Number.isFinite(qualityScore)?' · '+f(qualityScore):'')+'</b></div><div><span>Checks completed</span><b>'+checked+' / '+rules.length+'</b></div></div>')+
+ card('Final result','<div class="resultSummary '+status.toLowerCase()+'"><div class="resultIcon">'+(status==='PASS'?'✓':status==='FAIL'?'!':'?')+'</div><div><h3>'+statusTitle+'</h3><p>'+statusText+'</p><small>'+statusNote+'</small></div></div>')+
+ card('Voice analysis summary','<div class="grid3 patientMetrics"><div class="metric"><span>F₀</span><b>'+f(m.f0Mean)+' Hz</b><small>Mean fundamental frequency</small></div><div class="metric"><span>Jitter</span><b>'+f(m.jittPct)+' %</b><small>Cycle-to-cycle frequency variation</small></div><div class="metric"><span>Shimmer</span><b>'+f(m.shimPct)+' %</b><small>Amplitude variation</small></div><div class="metric"><span>NHR</span><b>'+f(m.nhr)+'</b><small>Noise-related ratio</small></div><div class="metric"><span>Signal quality</span><b>'+qualityLabel+'</b><small>Recording quality indicator</small></div><div class="metric"><span>Reference checks</span><b>'+checked+'</b><small>Applicable configured checks</small></div></div>')+
+ card(failed.length?'Flagged measurements':'Measurement check',''+failedRows)+
  card('Why this result?',why)+
- card('Voice analysis summary','<div class="grid3"><div class="metric"><span>F0</span><b>'+f(m.f0Mean)+' Hz</b></div><div class="metric"><span>Jitter</span><b>'+f(m.jittPct)+' %</b></div><div class="metric"><span>Shimmer</span><b>'+f(m.shimPct)+' %</b></div><div class="metric"><span>NHR</span><b>'+f(m.nhr)+'</b></div><div class="metric"><span>Signal quality</span><b>'+f(m.quality?.score)+'</b></div><div class="metric"><span>Measures checked</span><b>'+applicable.length+'</b></div></div>')+
- card('Measurements outside configured reference',failed.length?'<div class="tablewrap"><table><thead><tr><th>Measure</th><th>Value</th><th>Reference</th></tr></thead><tbody>'+failed.map(x=>'<tr><td>'+x[0]+'</td><td>'+f(Number(m[x[1]]))+' '+x[3]+'</td><td>≤ '+x[2]+' '+x[3]+'</td></tr>').join('')+'</tbody></table></div>':'<div class="empty">None of the applicable configured thresholds were exceeded.</div>');
+ card('What to do next','<div class="nextSteps"><div><span>01</span><b>Review the recording</b><p>Confirm the task, recording quality and measurement flags before interpretation.</p></div><div><span>02</span><b>Use clinical context</b><p>Consider case history and clinical assessment rather than the screening result alone.</p></div><div><span>03</span><b>Repeat when appropriate</b><p>For an unclear or limited recording, repeat the standardized task under comparable conditions.</p></div></div>')+
+ card('Important','<div class="notice patientNotice"><b>Screening only.</b> This PASS/FAIL/REVIEW label is based on configured project reference values. It does not diagnose, rule out, or confirm a voice disorder. Persistent voice concerns should be assessed by an appropriate clinician.</div>')+
+ card('Actions','<div class="toolbar patientActions"><button class="btn primary" onclick="state.page=\'Voice Lab\';render()">New / repeat recording →</button><button class="btn" onclick="state.page=\'Recommendations\';render()">Open voice-care guidance</button><button class="btn" onclick="window.print()">Print report</button></div>');
 }
 function voiceHygienePage(){
  const items=['Hydration','Regular voice breaks','Avoid shouting / excessive vocal effort','Use comfortable pitch and loudness','Reduce background-noise speaking','Avoid repeated throat clearing','Seek professional assessment for persistent hoarseness, pain or vocal fatigue'];
