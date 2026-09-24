@@ -26,6 +26,6 @@ test('patient workflow controls are wired',()=>{
 
 test('voice worker path and deployed entry agree',()=>{
   const index=fs.readFileSync(path.join(root,'public','index.html'),'utf8');
-  assert.match(index,/app-v20260924-uiux1\.js\?build=20260924-uiux3/);
+  assert.match(index,/app-v20260924-uiux1\.js\?build=20260924-uiux4/);
   assert.match(app,/new Worker\('\.\/analysis-worker\.js\?build=20260924-worker-fix1'\)/);
 });
