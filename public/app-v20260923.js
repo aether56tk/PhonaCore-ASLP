@@ -149,7 +149,7 @@ async function finishPCM(){
         render();
       }
     };
-    const worker=new Worker('./analysis-worker.js?build=20260924-dsp-audit-fix1');
+    const worker=new Worker('./analysis-worker.js?build=20260924-dsp-audit-fix2');
     state.analysisWorker=worker;
     let workerFinished=false;
     const finishWorker=()=>{workerFinished=true;clearTimeout(workerTimeout);worker.terminate();if(state.analysisWorker===worker)state.analysisWorker=null};
