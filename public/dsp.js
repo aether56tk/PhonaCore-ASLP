@@ -54,7 +54,7 @@ function autocorrelationF0(x,sr,minHz=70,maxHz=400){
   return best>.35?sr/bestLag:null;
 }
 function medianFilterSeries(values,window=5){const half=Math.floor(window/2),out=[...values];for(let i=0;i<values.length;i++){const w=[];for(let j=Math.max(0,i-half);j<=Math.min(values.length-1,i+half);j++)if(Number.isFinite(values[j]))w.push(values[j]);if(w.length)out[i]=median(w)}return out}
-function pitchTrack(samples,sr){const raw=frames(samples,sr,30,10).map((x,i)=>({time:i*.01,f0:autocorrelationF0(x,sr),rms:rms(x)}));const f0=medianFilterSeries(raw.map(x=>x.f0),5);return raw.map((x,i)=>({...x,f0:f0[i]}))}
+function pitchTrack(samples,sr){const raw=frames(samples,sr,30,10).map((x,i)=>({time:i*.01,f0:autocorrelationF0(x,sr),rms:rms(x)}));const smoothed=medianFilterSeries(raw.map(x=>x.f0),5);const voiced=smoothed.filter(Number.isFinite);const center=median(voiced);const cleaned=smoothed.map(v=>Number.isFinite(v)&&Number.isFinite(center)&&v>=center*.55&&v<=center*1.80?v:null);const final=medianFilterSeries(cleaned,5);return raw.map((x,i)=>({...x,f0:final[i]}))}
 
 /**
  * Period-level research extraction.
@@ -158,7 +158,7 @@ function spectralNoise(samples,sr,f0){
     if(!isH&&hz>=1500&&hz<=4500)highNon+=e;
   }
   const total=Math.max(1,harm);
-  const minHighEnergy=total*1e-7;
+  const minHighEnergy=Math.max(total*1e-5,1e-12);
   return{nhr:harm?highNon/harm:null,vti:harm?highNon/harm:null,spi:highH>minHighEnergy?lowH/highH:null};
 }
 function spectralCepstrumCPP(samples,sr){
@@ -199,9 +199,9 @@ function analyzeVoiceFast(samples,sr,task='vowel'){
   const p=peak(samples),r=rms(samples),clipped=samples.length?samples.filter(x=>Math.abs(x)>=.99).length/samples.length*100:0;
   const voicedPct=track.length?voiced.length/track.length*100:0;
   const quality=Math.max(0,Math.min(100,Math.round(100-.5*clipped-.35*Math.max(0,40-voicedPct))));
-  const f0Mean=mean(f0s),f0Min=f0s.length?Math.min(...f0s):null,f0Max=f0s.length?Math.max(...f0s):null;
-  const periodMean=pf.t0Ms;
-  const consistentF0=Number.isFinite(periodMean)&&periodMean>0?1000/periodMean:f0Mean;
+  const f0Mean=f0s.length?mean(f0s):null,f0Min=f0s.length?Math.min(...f0s):null,f0Max=f0s.length?Math.max(...f0s):null;
+  const periodMeanMs=Number.isFinite(f0Mean)&&f0Mean>0?1000/f0Mean:null;
+  const consistentF0=f0Mean;
   const pfrSemitones=f0Min&&f0Max?12*Math.log2(f0Max/f0Min):null;
   const voicedFrames=track.filter(x=>Number.isFinite(x.f0));
   const unvoicedFrames=track.length-voicedFrames.length;
@@ -210,7 +210,7 @@ function analyzeVoiceFast(samples,sr,task='vowel'){
     sampleRate:sr,durationSec,f0Mean:consistentF0,f0Median:median(f0s),f0Min,f0Max,f0Sd:sd(f0s),
     pfrSemitones:pfrSemitones,
     jitaUs:pf.jitaUs,jitterLocalPct:pf.jittPct,jittPct:pf.jittPct,rapPct:pf.rapPct,ppqPct:pf.ppqPct,
-    sppqPct:pf.sppqPct,vf0Pct:pf.vf0Pct,t0Ms:pf.t0Ms,
+    sppqPct:pf.sppqPct,vf0Pct:pf.vf0Pct,t0Ms:periodMeanMs,
     shimmerLocalPct:af.shimPct,shimPct:af.shimPct,shdB:af.shdB,apqPct:af.apqPct,sapqPct:af.sapqPct,vamPct:af.vamPct,
     nhr:noise.nhr,vti:noise.vti,spi:noise.spi,cppPrototypeDb:cpp,voicedPct,clippedPct:clipped,
     rmsDb:20*Math.log10(Math.max(r,1e-9)),peakDb:20*Math.log10(Math.max(p,1e-9)),
@@ -255,4 +255,4 @@ function taskSpecificMetrics(samples,sr,task='vowel'){const x=removeDC(samples),
 function measurementGate(a){const issues=[],status={},checks={duration:a.durationSec>=2,voicing:a.voicedPct>=30,clipping:a.clippedPct<=1,cycles:(a.periods||[]).length>=3};if(!checks.duration)issues.push('Recording shorter than 2 seconds');if(!checks.voicing)issues.push('Insufficient voiced material');if(!checks.clipping)issues.push('Clipping exceeds 1%');if(!checks.cycles)issues.push('Insufficient reliable voice periods');const core=['f0Mean','f0Min','f0Max','f0Sd','jitaUs','jittPct','rapPct','ppqPct','sppqPct','vf0Pct','shdB','shimPct','apqPct','sapqPct','vamPct','nhr'];for(const k of core)status[k]=checks.voicing&&checks.cycles&&Number.isFinite(a[k])?'valid':Number.isFinite(a[k])?'limited':'unavailable';return{overall:issues.length?'limited':'valid',issues,status}}
 window.SV_DSP={mean,median,sd,rms,peak,removeDC,normalize,hann,frames,autocorrelationF0,medianFilterSeries,pitchTrack,extractPeriods,periodSequenceFeatures,mdvpPerturbation,periodFeatures,amplitudeFeatures,taskSpecificMetrics,measurementGate,analyzeVoice,analyzeVoiceFast,stats};
 })();
-window.SV_DSP=window.SV_DSP||{};window.SV_DSP.MDVP_PARAMETER_SPEC=MDVP_PARAMETER_SPEC;window.SV_DSP.VERSION='2026-09-24-dsp-audit-fix1';
+window.SV_DSP=window.SV_DSP||{};window.SV_DSP.MDVP_PARAMETER_SPEC=MDVP_PARAMETER_SPEC;window.SV_DSP.VERSION='2026-09-24-dsp-audit-fix2';
