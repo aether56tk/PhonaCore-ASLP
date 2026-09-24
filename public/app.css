@@ -50,3 +50,93 @@
   .onboardMain{height:auto;min-height:0}
   .onboardNotice{margin-bottom:0}
 }
+
+/* ===== Clinical UX polish + patient report ===== */
+:root{--shadow-sm:0 8px 24px rgba(9,18,35,.08);--shadow-md:0 18px 48px rgba(9,18,35,.12)}
+body{letter-spacing:-.01em}
+.side{box-shadow:6px 0 28px rgba(15,30,55,.04)}
+.brand{letter-spacing:-.03em}
+.nav{transition:background .16s ease,color .16s ease,transform .16s ease;border-left:3px solid transparent}
+.nav.active{border-left-color:var(--accent);box-shadow:var(--shadow-sm)}
+.nav:hover{transform:translateX(2px)}
+.top{backdrop-filter:blur(14px);background:color-mix(in srgb,var(--bg) 88%,transparent)}
+.content{padding-top:30px}
+.card{box-shadow:0 4px 18px rgba(9,18,35,.035);transition:border-color .16s ease,box-shadow .16s ease}
+.card:hover{border-color:color-mix(in srgb,var(--line) 65%,var(--accent));box-shadow:var(--shadow-sm)}
+.btn{transition:transform .15s ease,box-shadow .15s ease,background .15s ease}
+.btn:hover{transform:translateY(-1px);box-shadow:0 7px 18px rgba(10,30,60,.10)}
+.btn:active{transform:translateY(0)}
+table tr:hover td{background:color-mix(in srgb,var(--panel2) 55%,transparent)}
+input:focus,select:focus,textarea:focus,.btn:focus-visible,.nav:focus-visible{outline:2px solid color-mix(in srgb,var(--accent) 70%,transparent);outline-offset:2px}
+.tablewrap{border:1px solid var(--line);border-radius:12px}
+.tablewrap table{border:0}
+.tablewrap th:first-child,.tablewrap td:first-child{padding-left:14px}
+.tablewrap th:last-child,.tablewrap td:last-child{padding-right:14px}
+.patientReportHero{display:flex;justify-content:space-between;align-items:center;gap:28px;padding:25px 28px;border-radius:18px;border:1px solid var(--line);margin-bottom:14px;box-shadow:var(--shadow-md);position:relative;overflow:hidden}
+.patientReportHero:before{content:"";position:absolute;inset:0;pointer-events:none;background:radial-gradient(circle at 100% 0,rgba(103,232,249,.12),transparent 35%)}
+.patientReportHero.pass{background:linear-gradient(135deg,color-mix(in srgb,var(--good) 12%,var(--panel)),var(--panel))}
+.patientReportHero.fail{background:linear-gradient(135deg,color-mix(in srgb,var(--bad) 12%,var(--panel)),var(--panel))}
+.patientReportHero.review{background:linear-gradient(135deg,color-mix(in srgb,var(--warn) 12%,var(--panel)),var(--panel))}
+.patientReportHeroCopy{position:relative;z-index:1;min-width:0}
+.patientReportTitleRow{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin:7px 0}
+.patientReportTitleRow h2{font-size:27px;margin:0;letter-spacing:-.7px}
+.patientReportHeroCopy>p{font-size:15px;margin:0 0 5px;max-width:760px}
+.patientReportHeroCopy>small{color:var(--muted);display:block;max-width:780px}
+.patientStatusBadge{position:relative;z-index:1;min-width:126px;height:126px;border-radius:50%;display:grid;place-content:center;text-align:center;border:2px solid var(--accent);background:color-mix(in srgb,var(--panel) 86%,transparent);box-shadow:inset 0 0 0 8px color-mix(in srgb,var(--accent) 8%,transparent),0 15px 35px rgba(5,20,40,.14)}
+.patientStatusBadge span{font-size:29px;font-weight:850;letter-spacing:1px}
+.patientStatusBadge small{color:var(--muted);font-size:10px;text-transform:uppercase;letter-spacing:1px}
+.patientStatusBadge.pass{border-color:var(--good);color:var(--good)}
+.patientStatusBadge.fail{border-color:var(--bad);color:var(--bad)}
+.patientStatusBadge.review{border-color:var(--warn);color:var(--warn)}
+.statusChip{display:inline-flex;align-items:center;justify-content:center;padding:5px 9px;border-radius:999px;border:1px solid var(--line);font-size:10px;font-weight:850;letter-spacing:.7px;text-transform:uppercase}
+.statusChip.pass{color:var(--good);background:color-mix(in srgb,var(--good) 10%,var(--panel));border-color:color-mix(in srgb,var(--good) 35%,var(--line))}
+.statusChip.fail{color:var(--bad);background:color-mix(in srgb,var(--bad) 10%,var(--panel));border-color:color-mix(in srgb,var(--bad) 35%,var(--line))}
+.statusChip.review{color:var(--warn);background:color-mix(in srgb,var(--warn) 10%,var(--panel));border-color:color-mix(in srgb,var(--warn) 35%,var(--line))}
+.patientSnapshot{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}
+.patientSnapshot>div{padding:13px 14px;border:1px solid var(--line);background:var(--metric);border-radius:11px;min-width:0}
+.patientSnapshot span{display:block;color:var(--muted);font-size:10px;text-transform:uppercase;letter-spacing:.7px}
+.patientSnapshot b{display:block;margin-top:3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.resultSummary{display:flex;align-items:center;gap:16px;padding:17px;border-radius:14px;border:1px solid var(--line);background:var(--metric)}
+.resultSummary.pass{border-color:color-mix(in srgb,var(--good) 38%,var(--line))}
+.resultSummary.fail{border-color:color-mix(in srgb,var(--bad) 38%,var(--line))}
+.resultSummary.review{border-color:color-mix(in srgb,var(--warn) 38%,var(--line))}
+.resultIcon{width:48px;height:48px;flex:0 0 48px;border-radius:50%;display:grid;place-items:center;font-size:23px;font-weight:900;background:var(--panel2);border:1px solid var(--line)}
+.resultSummary.pass .resultIcon{color:var(--good);border-color:var(--good)}
+.resultSummary.fail .resultIcon{color:var(--bad);border-color:var(--bad)}
+.resultSummary.review .resultIcon{color:var(--warn);border-color:var(--warn)}
+.resultSummary h3{margin:0 0 2px;font-size:18px}
+.resultSummary p{margin:0 0 2px}
+.resultSummary small{color:var(--muted)}
+.patientMetrics .metric{min-height:112px}
+.patientMetrics .metric small{display:block;margin-top:5px;line-height:1.35}
+.patientResultTable th{background:var(--panel2);position:sticky;top:0;z-index:1}
+.patientResultTable td{vertical-align:middle}
+.nextSteps{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
+.nextSteps>div{padding:16px;border:1px solid var(--line);border-radius:13px;background:var(--metric)}
+.nextSteps span{display:grid;place-items:center;width:28px;height:28px;border-radius:8px;background:var(--panel2);color:var(--accent);font-size:10px;font-weight:800;margin-bottom:10px}
+.nextSteps b{font-size:13px}
+.nextSteps p{margin:5px 0 0;color:var(--muted);font-size:12px}
+.patientNotice{border-left-width:4px}
+.patientActions{margin:0}
+body[data-theme="day"] .patientReportHero{box-shadow:0 14px 40px rgba(20,45,75,.09)}
+body[data-theme="day"] .card{box-shadow:0 4px 18px rgba(20,45,75,.05)}
+body[data-theme="day"] .top{background:rgba(244,247,251,.88)}
+@media(max-width:900px){
+ .content{padding:18px 14px}
+ .patientReportHero{padding:20px;align-items:flex-start}
+ .patientStatusBadge{min-width:96px;width:96px;height:96px}
+ .patientStatusBadge span{font-size:23px}
+ .patientSnapshot{grid-template-columns:1fr 1fr}
+ .nextSteps{grid-template-columns:1fr}
+}
+@media(max-width:560px){
+ .content{padding:14px 10px}
+ .head{align-items:flex-start;flex-direction:column;gap:8px}
+ .head h1{font-size:24px}
+ .patientReportHero{flex-direction:column}
+ .patientStatusBadge{align-self:flex-start}
+ .patientSnapshot{grid-template-columns:1fr}
+ .patientReportTitleRow h2{font-size:23px}
+ .resultSummary{align-items:flex-start}
+ .patientMetrics{grid-template-columns:1fr 1fr!important}
+}
