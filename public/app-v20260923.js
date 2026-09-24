@@ -1,16 +1,16 @@
 /* PhonaCore-ASLP build: 2026-09-23-fix-algorithm-validation */
-window.__PHONACORE_BUILD='2026-09-24-clinical-ux26';
+window.__PHONACORE_BUILD='2026-09-24-clinical-ux27';
 const {analyzeVoice,stats,mean,sd}=window.SV_DSP;
 const $=s=>document.querySelector(s), store={get(k,d){try{const raw=localStorage.getItem('sv_'+k);if(raw!==null)return JSON.parse(raw)}catch(e){}try{const raw=sessionStorage.getItem('sv_'+k);if(raw!==null)return JSON.parse(raw)}catch(e){}return d},set(k,v){const raw=JSON.stringify(v);try{localStorage.setItem('sv_'+k,raw);return true}catch(e){try{sessionStorage.setItem('sv_'+k,raw);return true}catch(_){return false}}}};
-let state={page:'Dashboard',theme:store.get('theme','night'),patient:null,patients:store.get('patients',[]),sessions:store.get('sessions',[]),recording:false,stream:null,recorder:null,chunks:[],pcmChunks:[],pcmProcessor:null,timer:null,seconds:0,analysis:null,tele:null,datasets:store.get('datasets',[]),experiments:store.get('experiments',[]),audioFiles:[],fileDirectory:null,pendingRecordingId:null};
+let state={page:'Dashboard',mode:store.get('mode','clinical'),theme:store.get('theme','night'),patient:null,patients:store.get('patients',[]),sessions:store.get('sessions',[]),recording:false,stream:null,recorder:null,chunks:[],pcmChunks:[],pcmProcessor:null,timer:null,seconds:0,analysis:null,tele:null,datasets:store.get('datasets',[]),experiments:store.get('experiments',[]),audioFiles:[],fileDirectory:null,pendingRecordingId:null};
 const demoIds=new Set(['P-001','P-002','P-003']);
 const demoNames=new Set(['Patient Alpha','Patient Beta','Patient Gamma']);
 const cleanedPatients=state.patients.filter(p=>!(demoIds.has(p.id)&&demoNames.has(p.name)));
 if(cleanedPatients.length!==state.patients.length){state.patients=cleanedPatients;store.set('patients',state.patients)}
 const cleanedSessions=state.sessions.filter(s=>!demoIds.has(s.patientId));
 if(cleanedSessions.length!==state.sessions.length){state.sessions=cleanedSessions;store.set('sessions',state.sessions)}
-const nav=['Dashboard','Patients','Clinical','Voice Lab','Research Lab','Recommendations','File Manager'];
-function navIcon(n){return{Dashboard:'⌂',Patients:'♙',Clinical:'✚','Voice Lab':'〽','Research Lab':'⚗',Recommendations:'♥','File Manager':'▣'}[n]||'•'}function render(){document.body.dataset.theme=state.theme;document.body.innerHTML=`<div class="layout"><aside class="side"><div class="brand"><span class="brandMark">〽</span><span>Phona<span>Core</span><small>ASLP • VOICE RESEARCH</small></span></div><nav class="navList">${nav.map(n=>`<button class="nav ${state.page===n?'active':''}" data-page="${n}"><i>${navIcon(n)}</i><span>${n}</span></button>`).join('')}</nav></aside><main class="main"><div class="top"><span>PhonaCore-ASLP / ${state.page}</span><div class="topActions"><button class="btn primary" id="globalNewAssessment">＋ New assessment</button><button class="btn" id="themeToggle">${state.theme==='night'?'☀ Daylight':'☾ Night'}</button></div></div><section class="content">${page()}</section></main>${state.notice?`<div class="toast">${state.notice}</div>`:''}</div>`;document.querySelectorAll('[data-page]').forEach(b=>b.onclick=()=>{state.page=b.dataset.page;render()});wire()}
+const nav=['Dashboard','Patients','Clinical','Voice Lab','Report','Research Lab','Recommendations','File Manager'];
+function navIcon(n){return{Dashboard:'⌂',Patients:'♙',Clinical:'✚','Voice Lab':'〽','Research Lab':'⚗',Recommendations:'♥',Report:'▤','File Manager':'▣'}[n]||'•'}function render(){document.body.dataset.theme=state.theme;document.body.innerHTML=`<div class="layout"><aside class="side"><div class="brand"><span class="brandMark">〽</span><span>Phona<span>Core</span><small>ASLP • VOICE RESEARCH</small></span></div><nav class="navList">${nav.map(n=>`<button class="nav ${state.page===n?'active':''}" data-page="${n}"><i>${navIcon(n)}</i><span>${n}</span></button>`).join('')}</nav></aside><main class="main"><div class="top"><span>PhonaCore-ASLP / ${state.page}</span><div class="topActions"><button class="btn primary" id="globalNewAssessment">＋ New assessment</button><button class="btn" id="themeToggle">${state.theme==='night'?'☀ Daylight':'☾ Night'}</button></div></div><section class="content">${page()}</section></main>${state.notice?`<div class="toast">${state.notice}</div>`:''}</div>`;document.querySelectorAll('[data-page]').forEach(b=>b.onclick=()=>{state.page=b.dataset.page;render()});wire()}
 function head(t,s,button=''){return`<div class="head"><h1>${t}</h1>${button}</div>`}function card(t,x){return`<div class="card"><div class="cardhead"><h2>${t}</h2></div>${x}</div>`}function btn(t,id=''){const action=id==='record'?' onclick="window.__PhonaCoreRecord&&window.__PhonaCoreRecord()"':id==='stop'?' onclick="window.__PhonaCoreStop&&window.__PhonaCoreStop()"':'';return`<button type="button" class="btn ${id?'primary':''}" id="${id}"${action}>${t}</button>`}
 function recommendationTrend(sessions){
  const rows=sessions.slice(0,8).reverse();
@@ -18,6 +18,23 @@ function recommendationTrend(sessions){
  const defs=[['Jitt','jittPct','%'],['Shim','shimPct','%'],['NHR','nhr','ratio'],['F0','f0Mean','Hz']];
  const W=760,H=250,pad=42;
  return '<div class="trendGrid">'+defs.map(d=>{const vals=rows.map(s=>Number(s.m?.[d[1]])).filter(Number.isFinite);if(vals.length<2)return '<div class="empty compact">'+d[0]+' trend unavailable.</div>';const min=Math.min(...vals),max=Math.max(...vals),span=max-min||1;const pts=rows.map((s,i)=>{const v=Number(s.m?.[d[1]]);if(!Number.isFinite(v))return null;return (pad+i*(W-2*pad)/Math.max(1,rows.length-1))+','+(H-pad-(v-min)/span*(H-2*pad))}).filter(Boolean).join(' ');return '<div class="trendCard"><div class="trendTitle"><b>'+d[0]+'</b><small>'+d[2]+'</small></div><svg viewBox="0 0 '+W+' '+H+'" aria-label="'+d[0]+' longitudinal trend"><line x1="'+pad+'" y1="'+(H-pad)+'" x2="'+(W-pad)+'" y2="'+(H-pad)+'" stroke="currentColor" opacity=".18"/><polyline fill="none" stroke="currentColor" stroke-width="3" points="'+pts+'"/>'+rows.map((s,i)=>{const v=Number(s.m?.[d[1]]);if(!Number.isFinite(v))return '';return '<circle cx="'+(pad+i*(W-2*pad)/Math.max(1,rows.length-1))+'" cy="'+(H-pad-(v-min)/span*(H-2*pad))+'" r="4" fill="currentColor"/>'}).join('')+'</svg><div class="small">Latest: '+f(vals[vals.length-1])+' '+d[2]+'</div></div>'}).join('')+'</div>';
+}
+function downsampleWaveform(x,n=1800){if(!x||!x.length)return[];const out=new Array(Math.min(n,x.length));const step=x.length/out.length;for(let i=0;i<out.length;i++){const at=Math.floor(i*step),to=Math.max(at+1,Math.floor((i+1)*step));let s=0,c=0;for(let j=at;j<to&&j<x.length;j++){s+=x[j];c++}out[i]=s/(c||1)}return out}
+function analysisFingerprint(m,s){
+ const rm=m?.recordingMeta||{};return {assessment_id:s?.id||'CURRENT',participant_id:s?.patientId||state.patient?.id||'—',timestamp:s?.createdAt||new Date().toISOString(),task:m?.task||s?.task||'—',sample_rate_hz:rm.sampleRate||'—',channels:rm.channels||1,duration_sec:m?.durationSec??rm.duration??'—',analysis_segment_sec:m?.researchParameters?.Tsam??'—',app_build:'2026-09-24-clinical-ux27',dsp_build:'2026-09-24-dsp-audit-fix4',mode:state.mode}};
+function reportPage(){
+ const s=state.analysis?{id:state.pendingRecordingId||'CURRENT',patientId:state.patient?.id,task:state.voiceTask,createdAt:new Date().toISOString(),m:state.analysis}:state.sessions.filter(x=>x.patientId===state.patient?.id&&x.status==='completed').sort((a,b)=>new Date(b.createdAt||0)-new Date(a.createdAt||0))[0];
+ const p=state.patient||state.patients.find(x=>x.id===s?.patientId),h=store.get('history_'+(p?.id||''),{}),m=s?.m;
+ if(!s||!m)return head('Clinical Report','Complete or save an assessment first.')+card('No report available','<div class="empty">Record and analyze a voice sample, then return here.</div>');
+ const fp=analysisFingerprint(m,s);
+ return head('Clinical Report','Structured report separated from patient recommendations.', '<span class="tag">'+state.mode.toUpperCase()+' MODE</span>')+
+ card('1 · Patient & assessment','<div class="metaGrid"><div><b>Participant</b><span>'+ (p?.name||'—')+'</span></div><div><b>ID</b><span>'+ (p?.id||'—')+'</span></div><div><b>Occupation</b><span>'+ (h.occupation||'Not documented')+'</span></div><div><b>Assessment</b><span>'+s.id+'</span></div><div><b>Date</b><span>'+new Date(s.createdAt||Date.now()).toLocaleString()+'</span></div><div><b>Task</b><span>'+ (s.task||m.task||'—')+'</span></div></div>')+
+ card('2 · Signal quality & acquisition',signalQualityPanel(m)+ '<div class="notice">Review signal-quality flags before clinical or research interpretation.</div>')+
+ card('3 · Acoustic measurements',parameterTable(m))+
+ card('4 · Signal visualization','<h3>F0 contour</h3><div class="chart">'+line((m.pitchTrack||[]).filter(x=>x.f0).map(x=>x.f0))+'</div><h3>Waveform preview</h3><div class="chart">'+(m.waveformPreview?.length?'<svg viewBox="0 0 800 220" preserveAspectRatio="none">'+(()=>{const v=m.waveformPreview,max=Math.max(...v.map(Math.abs))||1;return '<polyline fill="none" stroke="currentColor" stroke-width="1.5" points="'+v.map((x,i)=>(i/(v.length-1||1)*800)+','+(110-x/max*95)).join(' ')+'"/>'})()+'</svg>':'<div class="empty">Waveform preview was not retained for this assessment.</div>')+'</div><p class="small">A true spectrogram is shown only when raw signal frames are retained; PhonaCore does not substitute a synthetic image for missing signal data.</p>')+
+ card('5 · Voice profile',radialProfile(m))+
+ card('6 · Research fingerprint','<pre class="fingerprint">'+escapeHtml(JSON.stringify(fp,null,2))+'</pre>')+
+ card('Next step','<div class="toolbar"><button class="btn primary" onclick="state.page=\'Recommendations\';render()">Open recommendations →</button><button class="btn" onclick="state.mode=state.mode===\'clinical\'?\'research\':\'clinical\';store.set(\'mode\',state.mode);render()">Switch to '+(state.mode==='clinical'?'Research':'Clinical')+' mode</button><button class="btn" onclick="window.print()">Print report</button></div>');
 }
 function recommendationsPage(){
  const p=state.patient||{},h=store.get('history_'+p.id,{}),occupation=h.occupation||'Not documented',profile=hygieneProfiles[occupationHygieneKey(h.occupation)]||hygieneProfiles.General;
@@ -39,7 +56,7 @@ function recommendationsPage(){
  card('Next step','<div class="toolbar"><button class="btn primary" onclick="state.page=\'Voice Lab\';render()">Back to report</button><button class="btn" onclick="state.page=\'Clinical\';render()">Open clinical notes</button></div>');
 }
 
-function page(){switch(state.page){case'Validation 2.0':return validationEngine();case'Reliability Lab':return reliabilityLab();case'Validity Lab':return validityLab();case'Algorithm Validation':return algorithmValidation();case'Study Manager & Final QA':return studyManager();case'Batch Research':return batchResearch();case'Study Protocol':return studyProtocol();case'Patients':return patients();case'Clinical':return clinical();case'Voice Lab':return voice();case'Research Lab':return research();case'Recommendations':return recommendationsPage();case'File Manager':return fileManager();case'Datasets':return datasets();case'Statistics':return statistics();case'Security':return security();case'Settings':return settings();default:return dashboard()}}
+function page(){switch(state.page){case'Validation 2.0':return validationEngine();case'Reliability Lab':return reliabilityLab();case'Validity Lab':return validityLab();case'Algorithm Validation':return algorithmValidation();case'Study Manager & Final QA':return studyManager();case'Batch Research':return batchResearch();case'Study Protocol':return studyProtocol();case'Patients':return patients();case'Clinical':return clinical();case'Voice Lab':return voice();case'Report':return reportPage();case'Research Lab':return research();case'Recommendations':return recommendationsPage();case'File Manager':return fileManager();case'Datasets':return datasets();case'Statistics':return statistics();case'Security':return security();case'Settings':return settings();default:return dashboard()}}
 function startNewAssessment(){
   if(state.recording){state.recording=false;cleanupRecording()}
   if(state.analysisWorker){try{state.analysisWorker.terminate()}catch(_){ }state.analysisWorker=null}
@@ -168,7 +185,7 @@ async function finishPCM(){
           a.taskMetrics=window.SV_DSP.taskSpecificMetrics(pcm,sr,task);
           a.measurementStatus.gate=window.SV_DSP.measurementGate(a);
           a.recordingMeta={sampleRate:sr,channels:1,duration,codec:'PCM/Web Audio'};
-          state.analysis=a;state.notice='Recording analyzed successfully.';render();
+          a.waveformPreview=downsampleWaveform(pcm);state.analysis=a;state.notice='Recording analyzed successfully.';render();
         }catch(e){state.notice='Recording analysis failed: '+(e?.message||e);render()}
       },0);
       return;
@@ -180,7 +197,7 @@ async function finishPCM(){
         a.taskMetrics=window.SV_DSP.taskSpecificMetrics(pcm,sr,task);
         a.measurementStatus.gate=window.SV_DSP.measurementGate(a);
         a.recordingMeta={sampleRate:sr,channels:1,duration,codec:'PCM/Web Audio'};
-        state.analysis=a;
+        a.waveformPreview=downsampleWaveform(pcm);state.analysis=a;
         state.notice='Recording analyzed successfully.';
         render();
       }catch(e){
