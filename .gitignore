@@ -1,0 +1,13 @@
+node_modules/
+*.log
+.DS_Store
+Thumbs.db
+.env
+.env.*
+!.env.example
+data/
+datasets/
+recordings/
+exports/
+research/raw/
+research/private/
