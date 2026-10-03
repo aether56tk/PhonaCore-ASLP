@@ -1,3 +1,5 @@
+![CI](https://github.com/aether56tk/PhonaCore-ASLP/actions/workflows/ci.yml/badge.svg)
+
 # PhonaCore-ASLP
 
 **Browser-based acoustic voice analysis, clinical assessment and research software for Audiology & Speech-Language Pathology.**
