@@ -1,0 +1,10 @@
+cff-version: 1.2.0
+message: "If you use PhonaCore-ASLP, please cite this software."
+type: software
+title: "PhonaCore-ASLP"
+authors:
+  - family-names: "Tk"
+    given-names: "Adithyan"
+date-released: 2026-10-03
+url: "https://github.com/aether56tk/PhonaCore-ASLP"
+repository-code: "https://github.com/aether56tk/PhonaCore-ASLP"
