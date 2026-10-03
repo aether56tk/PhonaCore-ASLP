@@ -74,6 +74,13 @@ The repository includes measurement documentation, MDVP reference/validation met
 
 **Empirical clinical/research validation:** pending
 
+## Project files
+
+- [Security policy](SECURITY.md)
+- [Contributing guide](CONTRIBUTING.md)
+- [Validation status](VALIDATION_STATUS.md)
+- [Citation metadata](CITATION.cff)
+
 ## License
 
-See repository license.
+No open-source license is currently specified in the repository.
