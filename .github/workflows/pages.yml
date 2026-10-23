@@ -1,4 +1,5 @@
 name: Deploy PhonaCore-ASLP to GitHub Pages
+# Updated to Node 24-compatible GitHub Pages actions.
 on:
   push:
     branches: [main]
